@@ -22,7 +22,6 @@
 #include <dt-bindings/clock/rk_system_status.h>
 
 #include <linux/debugfs.h>
-#include <linux/devfreq.h>
 #include <linux/fixp-arith.h>
 #include <linux/iopoll.h>
 #include <linux/kernel.h>
@@ -40,6 +39,7 @@
 #include <linux/reset.h>
 #include <linux/delay.h>
 #include <linux/sort.h>
+#include <soc/rockchip/rockchip_dmc.h>
 #include <soc/rockchip/rockchip-system-status.h>
 #include <uapi/drm/rockchip_drm.h>
 #include <uapi/linux/videodev2.h>
@@ -181,6 +181,15 @@ struct vop_plane_state {
 	unsigned long offset;
 };
 
+struct rockchip_mcu_timing {
+	int mcu_pix_total;
+	int mcu_cs_pst;
+	int mcu_cs_pend;
+	int mcu_rw_pst;
+	int mcu_rw_pend;
+	int mcu_hold_mode;
+};
+
 struct vop_win {
 	struct vop_win *parent;
 	struct drm_plane base;
@@ -271,16 +280,25 @@ struct vop {
 	/* vop dclk reset */
 	struct reset_control *dclk_rst;
 
-	struct notifier_block dmc_nb;
-
 	struct rockchip_dclk_pll *pll;
+
+	struct rockchip_mcu_timing mcu_timing;
 
 	struct vop_win win[];
 };
 
-static struct vop *dmc_vop[MAX_VOPS];
-static struct devfreq *devfreq_vop;
-static DEFINE_MUTEX(register_devfreq_lock);
+static void vop_lock(struct vop *vop)
+{
+	mutex_lock(&vop->vop_lock);
+	rockchip_dmcfreq_lock();
+}
+
+static void vop_unlock(struct vop *vop)
+{
+	rockchip_dmcfreq_unlock();
+	mutex_unlock(&vop->vop_lock);
+}
+
 static inline void vop_grf_writel(struct vop *vop, struct vop_reg reg, u32 v)
 {
 	u32 val = 0;
@@ -480,7 +498,10 @@ static void vop_disable_allwin(struct vop *vop)
 
 static bool vop_fs_irq_is_active(struct vop *vop)
 {
-	return VOP_INTR_GET_TYPE(vop, status, FS_INTR);
+	if (VOP_MAJOR(vop->version) == 3 && VOP_MINOR(vop->version) >= 7)
+		return VOP_INTR_GET_TYPE(vop, status, FS_FIELD_INTR);
+	else
+		return VOP_INTR_GET_TYPE(vop, status, FS_INTR);
 }
 
 static bool vop_line_flag_is_active(struct vop *vop)
@@ -1342,7 +1363,6 @@ static void vop_initial(struct drm_crtc *crtc)
 	VOP_CTRL_SET(vop, dsp_blank, 0);
 	VOP_CTRL_SET(vop, axi_outstanding_max_num, 30);
 	VOP_CTRL_SET(vop, axi_max_outstanding_en, 1);
-	VOP_CTRL_SET(vop, reg_done_frm, 1);
 
 	/*
 	 * We need to make sure that all windows are disabled before resume
@@ -1365,7 +1385,9 @@ static void vop_crtc_disable(struct drm_crtc *crtc)
 	int sys_status = drm_crtc_index(crtc) ?
 				SYS_STATUS_LCDC1 : SYS_STATUS_LCDC0;
 
-	mutex_lock(&vop->vop_lock);
+	vop_lock(vop);
+	VOP_CTRL_SET(vop, reg_done_frm, 1);
+	VOP_CTRL_SET(vop, dsp_interlace, 0);
 	drm_crtc_vblank_off(crtc);
 	vop_disable_all_planes(vop);
 
@@ -1407,7 +1429,7 @@ static void vop_crtc_disable(struct drm_crtc *crtc)
 	clk_disable_unprepare(vop->dclk);
 	clk_disable_unprepare(vop->aclk);
 	clk_disable_unprepare(vop->hclk);
-	mutex_unlock(&vop->vop_lock);
+	vop_unlock(vop);
 
 	rockchip_clear_system_status(sys_status);
 
@@ -1789,7 +1811,7 @@ static const struct drm_plane_helper_funcs plane_helper_funcs = {
 	.atomic_disable = vop_plane_atomic_disable,
 };
 
-void vop_atomic_plane_reset(struct drm_plane *plane)
+static void vop_atomic_plane_reset(struct drm_plane *plane)
 {
 	struct vop_win *win = to_vop_win(plane);
 	struct vop_plane_state *vop_plane_state =
@@ -1809,7 +1831,7 @@ void vop_atomic_plane_reset(struct drm_plane *plane)
 	plane->state->plane = plane;
 }
 
-struct drm_plane_state *
+static struct drm_plane_state *
 vop_atomic_plane_duplicate_state(struct drm_plane *plane)
 {
 	struct vop_plane_state *old_vop_plane_state;
@@ -1954,8 +1976,13 @@ static int vop_crtc_enable_vblank(struct drm_crtc *crtc)
 
 	spin_lock_irqsave(&vop->irq_lock, flags);
 
-	VOP_INTR_SET_TYPE(vop, clear, FS_INTR, 1);
-	VOP_INTR_SET_TYPE(vop, enable, FS_INTR, 1);
+	if (VOP_MAJOR(vop->version) == 3 && VOP_MINOR(vop->version) >= 7) {
+		VOP_INTR_SET_TYPE(vop, clear, FS_FIELD_INTR, 1);
+		VOP_INTR_SET_TYPE(vop, enable, FS_FIELD_INTR, 1);
+	} else {
+		VOP_INTR_SET_TYPE(vop, clear, FS_INTR, 1);
+		VOP_INTR_SET_TYPE(vop, enable, FS_INTR, 1);
+	}
 
 	spin_unlock_irqrestore(&vop->irq_lock, flags);
 
@@ -1972,7 +1999,10 @@ static void vop_crtc_disable_vblank(struct drm_crtc *crtc)
 
 	spin_lock_irqsave(&vop->irq_lock, flags);
 
-	VOP_INTR_SET_TYPE(vop, enable, FS_INTR, 0);
+	if (VOP_MAJOR(vop->version) == 3 && VOP_MINOR(vop->version) >= 7)
+		VOP_INTR_SET_TYPE(vop, enable, FS_FIELD_INTR, 0);
+	else
+		VOP_INTR_SET_TYPE(vop, enable, FS_INTR, 0);
 
 	spin_unlock_irqrestore(&vop->irq_lock, flags);
 }
@@ -2392,6 +2422,36 @@ static void vop_crtc_close(struct drm_crtc *crtc)
 	mutex_unlock(&vop->vop_lock);
 }
 
+static void vop_crtc_send_mcu_cmd(struct drm_crtc *crtc,  u32 type, u32 value)
+{
+	struct vop *vop = NULL;
+
+	if (!crtc)
+		return;
+
+	vop = to_vop(crtc);
+	mutex_lock(&vop->vop_lock);
+	if (vop && vop->is_enabled) {
+		switch (type) {
+		case MCU_WRCMD:
+			VOP_CTRL_SET(vop, mcu_rs, 0);
+			VOP_CTRL_SET(vop, mcu_rw_bypass_port, value);
+			VOP_CTRL_SET(vop, mcu_rs, 1);
+			break;
+		case MCU_WRDATA:
+			VOP_CTRL_SET(vop, mcu_rs, 1);
+			VOP_CTRL_SET(vop, mcu_rw_bypass_port, value);
+			break;
+		case MCU_SETBYPASS:
+			VOP_CTRL_SET(vop, mcu_bypass, value ? 1 : 0);
+			break;
+		default:
+			break;
+		}
+	}
+	mutex_unlock(&vop->vop_lock);
+}
+
 static const struct rockchip_crtc_funcs private_crtc_funcs = {
 	.loader_protect = vop_crtc_loader_protect,
 	.enable_vblank = vop_crtc_enable_vblank,
@@ -2403,6 +2463,7 @@ static const struct rockchip_crtc_funcs private_crtc_funcs = {
 	.mode_valid = vop_crtc_mode_valid,
 	.bandwidth = vop_crtc_bandwidth,
 	.crtc_close = vop_crtc_close,
+	.crtc_send_mcu_cmd = vop_crtc_send_mcu_cmd,
 };
 
 static bool vop_crtc_mode_fixup(struct drm_crtc *crtc,
@@ -2536,6 +2597,21 @@ static bool vop_crtc_mode_update(struct drm_crtc *crtc)
 	return false;
 }
 
+static void vop_mcu_mode(struct drm_crtc *crtc)
+{
+	struct vop *vop = to_vop(crtc);
+
+	VOP_CTRL_SET(vop, mcu_clk_sel, 1);
+	VOP_CTRL_SET(vop, mcu_type, 1);
+
+	VOP_CTRL_SET(vop, mcu_hold_mode, 1);
+	VOP_CTRL_SET(vop, mcu_pix_total, vop->mcu_timing.mcu_pix_total);
+	VOP_CTRL_SET(vop, mcu_cs_pst, vop->mcu_timing.mcu_cs_pst);
+	VOP_CTRL_SET(vop, mcu_cs_pend, vop->mcu_timing.mcu_cs_pend);
+	VOP_CTRL_SET(vop, mcu_rw_pst, vop->mcu_timing.mcu_rw_pst);
+	VOP_CTRL_SET(vop, mcu_rw_pend, vop->mcu_timing.mcu_rw_pend);
+}
+
 static void vop_crtc_enable(struct drm_crtc *crtc)
 {
 	struct vop *vop = to_vop(crtc);
@@ -2560,7 +2636,7 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 	bool dclk_inv;
 
 	rockchip_set_system_status(sys_status);
-	mutex_lock(&vop->vop_lock);
+	vop_lock(vop);
 	DRM_DEV_INFO(vop->dev, "Update mode to %dx%d%s%d, type: %d\n",
 		     hdisplay, vdisplay, interlaced ? "i" : "p",
 		     adjusted_mode->vrefresh, s->output_type);
@@ -2698,11 +2774,14 @@ static void vop_crtc_enable(struct drm_crtc *crtc)
 
 	clk_set_rate(vop->dclk, adjusted_mode->crtc_clock * 1000);
 
+	if (vop->mcu_timing.mcu_pix_total)
+		vop_mcu_mode(crtc);
+
 	vop_cfg_done(vop);
 
 	enable_irq(vop->irq);
 	drm_crtc_vblank_on(crtc);
-	mutex_unlock(&vop->vop_lock);
+	vop_unlock(vop);
 }
 
 static int vop_zpos_cmp(const void *a, const void *b)
@@ -3272,7 +3351,10 @@ static void vop_cfg_update(struct drm_crtc *crtc,
 
 static bool vop_fs_irq_is_pending(struct vop *vop)
 {
-	return VOP_INTR_GET_TYPE(vop, status, FS_INTR);
+	if (VOP_MAJOR(vop->version) == 3 && VOP_MINOR(vop->version) >= 7)
+		return VOP_INTR_GET_TYPE(vop, status, FS_FIELD_INTR);
+	else
+		return VOP_INTR_GET_TYPE(vop, status, FS_INTR);
 }
 
 static void vop_wait_for_irq_handler(struct vop *vop)
@@ -3315,7 +3397,7 @@ static void vop_crtc_atomic_flush(struct drm_crtc *crtc,
 		int ret;
 
 		if (vop->mode_update)
-			vop_disable_all_planes(vop);
+			VOP_CTRL_SET(vop, dma_stop, 1);
 
 		need_wait_vblank = !vop_is_allwin_disabled(vop);
 		if (vop->mode_update && need_wait_vblank)
@@ -3369,6 +3451,21 @@ static void vop_crtc_atomic_flush(struct drm_crtc *crtc,
 	spin_lock_irqsave(&vop->irq_lock, flags);
 	vop->pre_overlay = s->hdr.pre_overlay;
 	vop_cfg_done(vop);
+	/*
+	 * rk322x and rk332x odd-even field will mistake when in interlace mode.
+	 * we must switch to frame effect before switch screen and switch to
+	 * field effect after switch screen complete.
+	 */
+	if (VOP_MAJOR(vop->version) == 3 &&
+	    (VOP_MINOR(vop->version) == 7 || VOP_MINOR(vop->version) == 8)) {
+		if (!vop->mode_update && VOP_CTRL_GET(vop, reg_done_frm))
+			VOP_CTRL_SET(vop, reg_done_frm, 0);
+	} else {
+		VOP_CTRL_SET(vop, reg_done_frm, 0);
+	}
+	if (vop->mcu_timing.mcu_pix_total)
+		VOP_CTRL_SET(vop, mcu_hold_mode, 0);
+
 	vop->mode_update = false;
 	spin_unlock_irqrestore(&vop->irq_lock, flags);
 
@@ -3716,7 +3813,7 @@ static irqreturn_t vop_isr(int irq, void *data)
 		ret = IRQ_HANDLED;
 	}
 
-	if (active_irqs & FS_INTR) {
+	if ((active_irqs & FS_INTR) || (active_irqs & FS_FIELD_INTR)) {
 		/* This is IC design not reasonable, this two register bit need
 		 * frame effective, but actually it's effective immediately, so
 		 * we config this register at frame start.
@@ -3727,7 +3824,7 @@ static irqreturn_t vop_isr(int irq, void *data)
 		spin_unlock_irqrestore(&vop->irq_lock, flags);
 		drm_crtc_handle_vblank(crtc);
 		vop_handle_vblank(vop);
-		active_irqs &= ~FS_INTR;
+		active_irqs &= ~(FS_INTR | FS_FIELD_INTR);
 		ret = IRQ_HANDLED;
 	}
 
@@ -4205,45 +4302,6 @@ out:
 }
 EXPORT_SYMBOL(rockchip_drm_wait_line_flag);
 
-static int dmc_notifier_call(struct notifier_block *nb, unsigned long event,
-			     void *data)
-{
-	struct vop *vop = container_of(nb, struct vop, dmc_nb);
-
-	if (event == DEVFREQ_PRECHANGE)
-		mutex_lock(&vop->vop_lock);
-	else if (event == DEVFREQ_POSTCHANGE)
-		mutex_unlock(&vop->vop_lock);
-
-	return NOTIFY_OK;
-}
-
-int rockchip_drm_register_notifier_to_dmc(struct devfreq *devfreq)
-{
-	int i, j = 0;
-
-	mutex_lock(&register_devfreq_lock);
-
-	devfreq_vop = devfreq;
-
-	for (i = 0; i < ARRAY_SIZE(dmc_vop); i++) {
-		if (!dmc_vop[i])
-			continue;
-		dmc_vop[i]->dmc_nb.notifier_call = dmc_notifier_call;
-		devfreq_register_notifier(devfreq_vop, &dmc_vop[i]->dmc_nb,
-					  DEVFREQ_TRANSITION_NOTIFIER);
-		j++;
-	}
-
-	mutex_unlock(&register_devfreq_lock);
-
-	if (j == 0)
-		return -ENOMEM;
-
-	return 0;
-}
-EXPORT_SYMBOL(rockchip_drm_register_notifier_to_dmc);
-
 static void vop_backlight_config_done(struct device *dev, bool async)
 {
 	struct vop *vop = dev_get_drvdata(dev);
@@ -4275,6 +4333,7 @@ static int vop_bind(struct device *dev, struct device *master, void *data)
 	size_t alloc_size;
 	int ret, irq, i;
 	int num_wins = 0;
+	struct device_node *mcu = NULL;
 
 	vop_data = of_device_get_match_data(dev);
 	if (!vop_data)
@@ -4409,22 +4468,26 @@ static int vop_bind(struct device *dev, struct device *master, void *data)
 	of_rockchip_drm_sub_backlight_register(dev, &vop->crtc,
 					       &rockchip_sub_backlight_ops);
 
-	mutex_lock(&register_devfreq_lock);
+	mcu = of_get_child_by_name(dev->of_node, "mcu-timing");
+	if (!mcu) {
+		DRM_INFO("no mcu-timing node found in %s\n",
+			 dev->of_node->full_name);
+	} else {
+		u32 val;
 
-	for (i = 0; i < ARRAY_SIZE(dmc_vop); i++) {
-		if (dmc_vop[i])
-			continue;
-		if (devfreq_vop) {
-			vop->dmc_nb.notifier_call = dmc_notifier_call;
-			devfreq_register_notifier(devfreq_vop,
-						  &vop->dmc_nb,
-						  DEVFREQ_TRANSITION_NOTIFIER);
-		}
-		dmc_vop[i] = vop;
-		break;
+		if (!of_property_read_u32(mcu, "mcu-pix-total", &val))
+			vop->mcu_timing.mcu_pix_total = val;
+		if (!of_property_read_u32(mcu, "mcu-cs-pst", &val))
+			vop->mcu_timing.mcu_cs_pst = val;
+		if (!of_property_read_u32(mcu, "mcu-cs-pend", &val))
+			vop->mcu_timing.mcu_cs_pend = val;
+		if (!of_property_read_u32(mcu, "mcu-rw-pst", &val))
+			vop->mcu_timing.mcu_rw_pst = val;
+		if (!of_property_read_u32(mcu, "mcu-rw-pend", &val))
+			vop->mcu_timing.mcu_rw_pend = val;
+		if (!of_property_read_u32(mcu, "mcu-hold-mode", &val))
+			vop->mcu_timing.mcu_hold_mode = val;
 	}
-
-	mutex_unlock(&register_devfreq_lock);
 
 	return 0;
 }
@@ -4432,24 +4495,6 @@ static int vop_bind(struct device *dev, struct device *master, void *data)
 static void vop_unbind(struct device *dev, struct device *master, void *data)
 {
 	struct vop *vop = dev_get_drvdata(dev);
-	int i;
-
-	mutex_lock(&register_devfreq_lock);
-
-	for (i = 0; i < ARRAY_SIZE(dmc_vop); i++) {
-		if (dmc_vop[i] != vop)
-			continue;
-		dmc_vop[i] = NULL;
-
-		if (!devfreq_vop)
-			break;
-		devfreq_unregister_notifier(devfreq_vop,
-					    &vop->dmc_nb,
-					    DEVFREQ_TRANSITION_NOTIFIER);
-		break;
-	}
-
-	mutex_unlock(&register_devfreq_lock);
 
 	pm_runtime_disable(dev);
 	vop_destroy_crtc(vop);

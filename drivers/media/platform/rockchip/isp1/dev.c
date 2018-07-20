@@ -42,6 +42,8 @@
 #include <linux/pinctrl/consumer.h>
 #include <media/videobuf2-dma-contig.h>
 #include <linux/dma-iommu.h>
+#include <dt-bindings/soc/rockchip-system-status.h>
+#include <soc/rockchip/rockchip-system-status.h>
 #include "regs.h"
 #include "rkisp1.h"
 #include "common.h"
@@ -187,8 +189,10 @@ static int rkisp1_pipeline_set_stream(struct rkisp1_pipeline *p, bool on)
 	    (!on && atomic_dec_return(&p->stream_cnt) > 0))
 		return 0;
 
-	if (on)
+	if (on) {
+		rockchip_set_system_status(SYS_STATUS_ISP);
 		v4l2_subdev_call(&dev->isp_sdev.sd, video, s_stream, true);
+	}
 
 	/* phy -> sensor */
 	for (i = 0; i < p->num_subdevs; ++i) {
@@ -197,8 +201,10 @@ static int rkisp1_pipeline_set_stream(struct rkisp1_pipeline *p, bool on)
 			goto err_stream_off;
 	}
 
-	if (!on)
+	if (!on) {
 		v4l2_subdev_call(&dev->isp_sdev.sd, video, s_stream, false);
+		rockchip_clear_system_status(SYS_STATUS_ISP);
+	}
 
 	return 0;
 
@@ -206,6 +212,7 @@ err_stream_off:
 	for (--i; i >= 0; --i)
 		v4l2_subdev_call(p->subdevs[i], video, s_stream, false);
 	v4l2_subdev_call(&dev->isp_sdev.sd, video, s_stream, false);
+	rockchip_clear_system_status(SYS_STATUS_ISP);
 	return ret;
 }
 
@@ -342,7 +349,7 @@ static int rkisp1_fwnode_parse(struct device *dev,
 	 * not be get in here
 	 */
 	if (vep->bus_type != V4L2_MBUS_BT656 &&
-		vep->bus_type != V4L2_MBUS_PARALLEL)
+	    vep->bus_type != V4L2_MBUS_PARALLEL)
 		return 0;
 
 	rk_asd->mbus.flags = bus->flags;
@@ -444,6 +451,7 @@ static const char * const rk3399_isp_clks[] = {
 	"hclk_isp",
 	"aclk_isp_wrap",
 	"hclk_isp_wrap",
+	"pclk_isp_wrap"
 };
 
 static const struct isp_match_data rk3288_isp_match_data = {
@@ -482,8 +490,7 @@ static irqreturn_t rkisp1_irq_handler(int irq, void *ctx)
 {
 	struct device *dev = ctx;
 	struct rkisp1_device *rkisp1_dev = dev_get_drvdata(dev);
-	void __iomem *base = rkisp1_dev->base_addr;
-	unsigned int mis_val, i;
+	unsigned int mis_val;
 
 	mis_val = readl(rkisp1_dev->base_addr + CIF_ISP_MIS);
 	if (mis_val)
@@ -493,12 +500,9 @@ static irqreturn_t rkisp1_irq_handler(int irq, void *ctx)
 	if (mis_val)
 		rkisp1_mipi_isr(mis_val, rkisp1_dev);
 
-	for (i = 0; i < RKISP1_MAX_STREAM; ++i) {
-		struct rkisp1_stream *stream = &rkisp1_dev->stream[i];
-
-		if (stream->ops->is_frame_end_int_masked(base))
-			rkisp1_mi_isr(stream);
-	}
+	mis_val = readl(rkisp1_dev->base_addr + CIF_MI_MIS);
+	if (mis_val)
+		rkisp1_mi_isr(mis_val, rkisp1_dev);
 
 	return IRQ_HANDLED;
 }
@@ -508,7 +512,8 @@ static void rkisp1_disable_sys_clk(struct rkisp1_device *rkisp1_dev)
 	int i;
 
 	for (i = rkisp1_dev->clk_size - 1; i >= 0; i--)
-		clk_disable_unprepare(rkisp1_dev->clks[i]);
+		if (!IS_ERR(rkisp1_dev->clks[i]))
+			clk_disable_unprepare(rkisp1_dev->clks[i]);
 }
 
 static int rkisp1_enable_sys_clk(struct rkisp1_device *rkisp1_dev)
@@ -516,14 +521,17 @@ static int rkisp1_enable_sys_clk(struct rkisp1_device *rkisp1_dev)
 	int i, ret = -EINVAL;
 
 	for (i = 0; i < rkisp1_dev->clk_size; i++) {
-		ret = clk_prepare_enable(rkisp1_dev->clks[i]);
-		if (ret < 0)
-			goto err;
+		if (!IS_ERR(rkisp1_dev->clks[i])) {
+			ret = clk_prepare_enable(rkisp1_dev->clks[i]);
+			if (ret < 0)
+				goto err;
+		}
 	}
 	return 0;
 err:
 	for (--i; i >= 0; --i)
-		clk_disable_unprepare(rkisp1_dev->clks[i]);
+		if (!IS_ERR(rkisp1_dev->clks[i]))
+			clk_disable_unprepare(rkisp1_dev->clks[i]);
 	return ret;
 }
 
@@ -557,7 +565,7 @@ static int rkisp1_iommu_init(struct rkisp1_device *rkisp1_dev)
 	if (ret)
 		goto err;
 	if (!common_iommu_setup_dma_ops(rkisp1_dev->dev, 0x10000000,
-	    SZ_2G, rkisp1_dev->domain->ops)) {
+					SZ_2G, rkisp1_dev->domain->ops)) {
 		iommu_detach_device(rkisp1_dev->domain, rkisp1_dev->dev);
 		ret = -ENODEV;
 		goto err;
@@ -618,10 +626,8 @@ static int rkisp1_plat_probe(struct platform_device *pdev)
 	for (i = 0; i < match_data->size; i++) {
 		struct clk *clk = devm_clk_get(dev, match_data->clks[i]);
 
-		if (IS_ERR(clk)) {
-			dev_err(dev, "failed to get %s\n", match_data->clks[i]);
-			return PTR_ERR(clk);
-		}
+		if (IS_ERR(clk))
+			dev_dbg(dev, "failed to get %s\n", match_data->clks[i]);
 		isp_dev->clks[i] = clk;
 	}
 	isp_dev->clk_size = match_data->size;

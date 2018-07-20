@@ -94,6 +94,15 @@
 		default-brightness-level = <200>;
 	};
 
+	charge-animation {
+		compatible = "rockchip,uboot-charge";
+		rockchip,uboot-charge-on = <0>;
+		rockchip,android-charge-on = <1>;
+		rockchip,uboot-low-power-voltage = <3500>;
+		rockchip,screen-on-voltage = <3600>;
+		status = "okay";
+	};
+
 	rk809-sound {
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
@@ -164,14 +173,14 @@
 
 	wireless-bluetooth {
 		compatible = "bluetooth-platdata";
-		/*clocks = <&rk809 1>;*/
-		/*clock-names = "ext_clock";*/
+		clocks = <&rk809 1>;
+		clock-names = "ext_clock";
 		uart_rts_gpios = <&gpio1 RK_PC3 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default","rts_gpio";
 		pinctrl-0 = <&uart1_rts>;
 		pinctrl-1 = <&uart1_rts_gpio>;
-		BT,reset_gpio = <&gpio0 RK_PC1 GPIO_ACTIVE_HIGH>;
-		BT,wake_gpio = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
+		BT,reset_gpio = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
+		BT,wake_gpio = <&gpio2 RK_PB0 GPIO_ACTIVE_HIGH>;
 		BT,wake_host_irq = <&gpio0 RK_PB3 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};
@@ -274,6 +283,11 @@
 	};
 };
 
+&bus_apll {
+	bus-supply = <&vdd_logic>;
+	status = "okay";
+};
+
 &cpu0 {
 	cpu-supply = <&vdd_arm>;
 };
@@ -304,11 +318,7 @@
 
 &gmac {
 	phy-supply = <&vcc_phy>;
-	assigned-clocks = <&cru SCLK_GMAC>;
-	assigned-clock-parents = <&gmac_clkin>;
-	clock_in_out = "input";
-	pinctrl-names = "default";
-	pinctrl-0 = <&rmii_pins &mac_refclk>;
+	clock_in_out = "output";
 	snps,reset-gpio = <&gpio2 13 GPIO_ACTIVE_LOW>;
 	snps,reset-active-low;
 	snps,reset-delays-us = <0 50000 50000>;
@@ -428,20 +438,20 @@
 				regulator-initial-mode = <0x2>;
 				regulator-name = "vcc_3v0";
 				regulator-state-mem {
-					regulator-off-in-suspend;
+					regulator-on-in-suspend;
 					regulator-suspend-microvolt = <3000000>;
 				};
 			};
 
-			vcc2v5_ddr: LDO_REG1 {
+			vcc_1v0: LDO_REG1 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <2500000>;
-				regulator-max-microvolt = <2500000>;
-				regulator-name = "vcc2v5_ddr";
+				regulator-min-microvolt = <1000000>;
+				regulator-max-microvolt = <1000000>;
+				regulator-name = "vcc_1v0";
 				regulator-state-mem {
 					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <2500000>;
+					regulator-suspend-microvolt = <1000000>;
 				};
 			};
 
@@ -602,10 +612,11 @@
 	};
 
 	gt1x: gt1x@14 {
-	      compatible = "goodix,gt1x";
-	      reg = <0x14>;
-	      goodix,rst-gpio = <&gpio0 RK_PB4 GPIO_ACTIVE_HIGH>;
-	      goodix,irq-gpio = <&gpio0 RK_PA5 IRQ_TYPE_LEVEL_LOW>;
+		compatible = "goodix,gt1x";
+		reg = <0x14>;
+		power-supply = <&vcc3v3_lcd>;
+		goodix,rst-gpio = <&gpio0 RK_PB4 GPIO_ACTIVE_HIGH>;
+		goodix,irq-gpio = <&gpio0 RK_PA5 IRQ_TYPE_LEVEL_LOW>;
 	};
 
 	sensor@4c {

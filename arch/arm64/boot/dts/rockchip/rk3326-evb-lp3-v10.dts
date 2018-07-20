@@ -211,6 +211,22 @@
 		BT,wake_host_irq = <&gpio0 RK_PB3 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};
+
+	vcc18_lcd_n: vcc18-lcd-n {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc18_lcd_n";
+		regulator-boot-on;
+		gpio = <&gpio0 RK_PB5 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-state-mem {
+			regulator-off-in-suspend;
+		};
+	};
+};
+
+&bus_apll {
+	bus-supply = <&vdd_logic>;
+	status = "okay";
 };
 
 &cpu0 {
@@ -228,7 +244,7 @@
 		compatible = "sitronix,st7703", "simple-panel-dsi";
 		reg = <0>;
 		backlight = <&backlight>;
-		enable-gpios = <&gpio0 RK_PB5 GPIO_ACTIVE_HIGH>;
+		power-supply = <&vcc18_lcd_n>;
 		prepare-delay-ms = <2>;
 		reset-delay-ms = <1>;
 		init-delay-ms = <20>;
@@ -481,15 +497,15 @@
 				};
 			};
 
-			vcc2v5_ddr: LDO_REG1 {
+			vcc_1v0: LDO_REG1 {
 				regulator-always-on;
 				regulator-boot-on;
-				regulator-min-microvolt = <2500000>;
-				regulator-max-microvolt = <2500000>;
-				regulator-name = "vcc2v5_ddr";
+				regulator-min-microvolt = <1000000>;
+				regulator-max-microvolt = <1000000>;
+				regulator-name = "vcc_1v0";
 				regulator-state-mem {
 					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <2500000>;
+					regulator-suspend-microvolt = <1000000>;
 				};
 			};
 
@@ -634,9 +650,9 @@
 			compatible = "rk817,charger";
 			min_input_voltage = <4500>;
 			max_input_current = <1500>;
-			max_chrg_current = <1300>;
+			max_chrg_current = <2000>;
 			max_chrg_voltage = <4200>;
-			chrg_term_mode = <1>;
+			chrg_term_mode = <0>;
 			chrg_finish_cur = <300>;
 			virtual_power = <0>;
 			dc_det_adc = <0>;
@@ -675,10 +691,11 @@
 	};
 
 	gt1x: gt1x@14 {
-	      compatible = "goodix,gt1x";
-	      reg = <0x14>;
-	      goodix,rst-gpio = <&gpio0 RK_PB4 GPIO_ACTIVE_HIGH>;
-	      goodix,irq-gpio = <&gpio0 RK_PA5 IRQ_TYPE_LEVEL_LOW>;
+		compatible = "goodix,gt1x";
+		reg = <0x14>;
+		power-supply = <&vcc18_lcd_n>;
+		goodix,rst-gpio = <&gpio0 RK_PB4 GPIO_ACTIVE_HIGH>;
+		goodix,irq-gpio = <&gpio0 RK_PA5 IRQ_TYPE_LEVEL_LOW>;
 	};
 
 	sensor@4c {

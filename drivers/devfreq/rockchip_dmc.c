@@ -44,6 +44,7 @@
 #include <linux/suspend.h>
 #include <linux/thermal.h>
 
+#include <soc/rockchip/pm_domains.h>
 #include <soc/rockchip/rkfb_dmc.h>
 #include <soc/rockchip/rockchip_dmc.h>
 #include <soc/rockchip/rockchip_sip.h>
@@ -696,7 +697,7 @@ struct rk3328_ddr_dts_config_timing {
 	unsigned int available;
 };
 
-struct	rk3328_ddr_de_skew_setting {
+struct rk3328_ddr_de_skew_setting {
 	unsigned int ca_de_skew[30];
 	unsigned int cs0_de_skew[84];
 	unsigned int cs1_de_skew[84];
@@ -759,7 +760,7 @@ struct rockchip_dmcfreq {
 	struct devfreq_simple_ondemand_data ondemand_data;
 	struct clk *dmc_clk;
 	struct devfreq_event_dev *edev;
-	struct mutex lock; /* scaling frequency lock */
+	struct mutex lock; /* serializes access to video_info_list */
 	struct dram_timing *timing;
 	struct regulator *vdd_center;
 	struct notifier_block system_status_nb;
@@ -769,6 +770,7 @@ struct rockchip_dmcfreq {
 	struct freq_map_table *vop_bw_tbl;
 	struct work_struct devfreq_update;
 	struct input_handler input_handler;
+	struct thermal_opp_info *opp_info;
 
 	unsigned long rate, target_rate;
 	unsigned long volt, target_volt;
@@ -809,7 +811,27 @@ struct rockchip_dmcfreq {
 	int (*set_auto_self_refresh)(u32 en);
 };
 
+static struct thermal_opp_device_data dmc_devdata = {
+	.type = THERMAL_OPP_TPYE_DEV,
+	.low_temp_adjust = rockchip_dev_low_temp_adjust,
+	.high_temp_adjust = rockchip_dev_high_temp_adjust,
+};
+
 static struct pm_qos_request pm_qos;
+
+static DECLARE_RWSEM(rockchip_dmcfreq_sem);
+
+void rockchip_dmcfreq_lock(void)
+{
+	down_read(&rockchip_dmcfreq_sem);
+}
+EXPORT_SYMBOL(rockchip_dmcfreq_lock);
+
+void rockchip_dmcfreq_unlock(void)
+{
+	up_read(&rockchip_dmcfreq_sem);
+}
+EXPORT_SYMBOL(rockchip_dmcfreq_unlock);
 
 /*
  * function: packaging de-skew setting to px30_ddr_dts_config_timing,
@@ -819,7 +841,7 @@ static struct pm_qos_request pm_qos;
  * output: tim
  */
 static void px30_de_skew_set_2_reg(struct rk3328_ddr_de_skew_setting *de_skew,
-				   struct  px30_ddr_dts_config_timing *tim)
+				   struct px30_ddr_dts_config_timing *tim)
 {
 	u32 n;
 	u32 offset;
@@ -873,8 +895,9 @@ static void px30_de_skew_set_2_reg(struct rk3328_ddr_de_skew_setting *de_skew,
  * input: de_skew
  * output: tim
  */
-static void rk3328_de_skew_setting_2_register(struct rk3328_ddr_de_skew_setting *de_skew,
-					      struct  rk3328_ddr_dts_config_timing *tim)
+static void
+rk3328_de_skew_setting_2_register(struct rk3328_ddr_de_skew_setting *de_skew,
+				  struct rk3328_ddr_dts_config_timing *tim)
 {
 	u32 n;
 	u32 offset;
@@ -930,6 +953,7 @@ static int rockchip_dmcfreq_target(struct device *dev, unsigned long *freq,
 	unsigned long old_clk_rate = dmcfreq->rate;
 	unsigned long target_volt, target_rate;
 	unsigned int cpu_cur, cpufreq_cur;
+	bool is_cpufreq_changed = false;
 	int err = 0;
 
 	rcu_read_lock();
@@ -957,9 +981,11 @@ static int rockchip_dmcfreq_target(struct device *dev, unsigned long *freq,
 				target_volt);
 			return err;
 		}
+		dmcfreq->volt = target_volt;
+		return 0;
+	} else if (!dmcfreq->volt) {
+		dmcfreq->volt = regulator_get_voltage(dmcfreq->vdd_center);
 	}
-
-	mutex_lock(&dmcfreq->lock);
 
 	/*
 	 * We need to prevent cpu hotplug from happening while a dmc freq rate
@@ -987,12 +1013,14 @@ static int rockchip_dmcfreq_target(struct device *dev, unsigned long *freq,
 
 	/* If we're thermally throttled; don't change; */
 	if (dmcfreq->min_cpu_freq && cpufreq_cur < dmcfreq->min_cpu_freq) {
-		if (policy->max >= dmcfreq->min_cpu_freq)
+		if (policy->max >= dmcfreq->min_cpu_freq) {
 			__cpufreq_driver_target(policy, dmcfreq->min_cpu_freq,
 						CPUFREQ_RELATION_L);
-		else
+			is_cpufreq_changed = true;
+		} else {
 			dev_dbg(dev, "CPU may too slow for DMC (%d MHz)\n",
 				policy->max);
+		}
 	}
 
 	/*
@@ -1009,8 +1037,18 @@ static int rockchip_dmcfreq_target(struct device *dev, unsigned long *freq,
 		}
 	}
 
+	/*
+	 * Writer in rwsem may block readers even during its waiting in queue,
+	 * and this may lead to a deadlock when the code path takes read sem
+	 * twice (e.g. one in vop_lock() and another in rockchip_pmu_lock()).
+	 * As a (suboptimal) workaround, let writer to spin until it gets the
+	 * lock.
+	 */
+	while (!down_write_trylock(&rockchip_dmcfreq_sem))
+		cond_resched();
 	dev_dbg(dev, "%lu-->%lu\n", old_clk_rate, target_rate);
 	err = clk_set_rate(dmcfreq->dmc_clk, target_rate);
+	up_write(&rockchip_dmcfreq_sem);
 	if (err) {
 		dev_err(dev, "Cannot set frequency %lu (%d)\n",
 			target_rate, err);
@@ -1048,12 +1086,13 @@ static int rockchip_dmcfreq_target(struct device *dev, unsigned long *freq,
 
 	dmcfreq->volt = target_volt;
 out:
-	__cpufreq_driver_target(policy, cpufreq_cur, CPUFREQ_RELATION_L);
+	if (is_cpufreq_changed)
+		__cpufreq_driver_target(policy, cpufreq_cur,
+					CPUFREQ_RELATION_L);
 	up_write(&policy->rwsem);
 	cpufreq_cpu_put(policy);
 cpufreq:
 	put_online_cpus();
-	mutex_unlock(&dmcfreq->lock);
 	return err;
 }
 
@@ -1630,8 +1669,8 @@ int rockchip_dmcfreq_wait_complete(void)
 	return 0;
 }
 
-static int px30_dmc_init(struct platform_device *pdev,
-			 struct rockchip_dmcfreq *dmcfreq)
+static __maybe_unused int px30_dmc_init(struct platform_device *pdev,
+					struct rockchip_dmcfreq *dmcfreq)
 {
 	struct arm_smccc_res res;
 	u32 size;
@@ -1701,8 +1740,8 @@ static int px30_dmc_init(struct platform_device *pdev,
 	return 0;
 }
 
-static int rk3128_dmc_init(struct platform_device *pdev,
-			   struct rockchip_dmcfreq *dmcfreq)
+static __maybe_unused int rk3128_dmc_init(struct platform_device *pdev,
+					  struct rockchip_dmcfreq *dmcfreq)
 {
 	struct arm_smccc_res res;
 	struct drm_device *drm = drm_device_get_by_name("rockchip");
@@ -1739,8 +1778,8 @@ static int rk3128_dmc_init(struct platform_device *pdev,
 	return 0;
 }
 
-static int rk3228_dmc_init(struct platform_device *pdev,
-			   struct rockchip_dmcfreq *dmcfreq)
+static __maybe_unused int rk3228_dmc_init(struct platform_device *pdev,
+					  struct rockchip_dmcfreq *dmcfreq)
 {
 	/*
 	 * dmc_init have been done in uboot.
@@ -1750,8 +1789,8 @@ static int rk3228_dmc_init(struct platform_device *pdev,
 	return 0;
 }
 
-static int rk3288_dmc_init(struct platform_device *pdev,
-			   struct rockchip_dmcfreq *dmcfreq)
+static __maybe_unused int rk3288_dmc_init(struct platform_device *pdev,
+					  struct rockchip_dmcfreq *dmcfreq)
 {
 	struct device *dev = &pdev->dev;
 	struct clk *pclk_phy, *pclk_upctl, *dmc_clk;
@@ -1845,8 +1884,8 @@ static int rk3288_dmc_init(struct platform_device *pdev,
 	return 0;
 }
 
-static int rk3328_dmc_init(struct platform_device *pdev,
-			   struct rockchip_dmcfreq *dmcfreq)
+static __maybe_unused int rk3328_dmc_init(struct platform_device *pdev,
+					  struct rockchip_dmcfreq *dmcfreq)
 {
 	struct arm_smccc_res res;
 	u32 size;
@@ -1890,8 +1929,8 @@ static int rk3328_dmc_init(struct platform_device *pdev,
 	return 0;
 }
 
-static int rk3368_dmc_init(struct platform_device *pdev,
-			   struct rockchip_dmcfreq *dmcfreq)
+static __maybe_unused int rk3368_dmc_init(struct platform_device *pdev,
+					  struct rockchip_dmcfreq *dmcfreq)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *np = pdev->dev.of_node;
@@ -1970,7 +2009,8 @@ static int rk3368_dmc_init(struct platform_device *pdev,
 	return 0;
 }
 
-static int rk3399_dmc_init(struct platform_device *pdev)
+static __maybe_unused int rk3399_dmc_init(struct platform_device *pdev,
+					  struct rockchip_dmcfreq *dmcfreq)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *np = pdev->dev.of_node;
@@ -2008,14 +2048,30 @@ static int rk3399_dmc_init(struct platform_device *pdev)
 }
 
 static const struct of_device_id rockchip_dmcfreq_of_match[] = {
+#ifdef CONFIG_CPU_PX30
 	{ .compatible = "rockchip,px30-dmc", .data = px30_dmc_init },
+#endif
+#ifdef CONFIG_CPU_RK312X
 	{ .compatible = "rockchip,rk3128-dmc", .data = rk3128_dmc_init },
+#endif
+#ifdef CONFIG_CPU_RK322X
 	{ .compatible = "rockchip,rk3228-dmc", .data = rk3228_dmc_init },
+#endif
+#ifdef CONFIG_CPU_RK3288
 	{ .compatible = "rockchip,rk3288-dmc", .data = rk3288_dmc_init },
+#endif
+#ifdef CONFIG_CPU_RK3308
 	{ .compatible = "rockchip,rk3308-dmc", .data = NULL },
+#endif
+#ifdef CONFIG_CPU_RK3328
 	{ .compatible = "rockchip,rk3328-dmc", .data = rk3328_dmc_init },
+#endif
+#ifdef CONFIG_CPU_RK3368
 	{ .compatible = "rockchip,rk3368-dmc", .data = rk3368_dmc_init },
+#endif
+#ifdef CONFIG_CPU_RK3399
 	{ .compatible = "rockchip,rk3399-dmc", .data = rk3399_dmc_init },
+#endif
 	{ },
 };
 MODULE_DEVICE_TABLE(of, rockchip_dmcfreq_of_match);
@@ -2884,10 +2940,7 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 	int (*init)(struct platform_device *pdev,
 		    struct rockchip_dmcfreq *data);
 	unsigned long opp_rate, opp_volt;
-#define MAX_PROP_NAME_LEN	3
-	char name[MAX_PROP_NAME_LEN];
 	bool is_events_available = false;
-	int lkg_volt_sel, pvtm_volt_sel, volt_sel;
 	int ret;
 
 	data = devm_kzalloc(dev, sizeof(struct rockchip_dmcfreq), GFP_KERNEL);
@@ -2938,28 +2991,16 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 	 * We add a devfreq driver to our parent since it has a device tree node
 	 * with operating points.
 	 */
-	lkg_volt_sel = rockchip_of_get_lkg_volt_sel(dev, "ddr_leakage");
-	pvtm_volt_sel = rockchip_of_get_pvtm_volt_sel(dev, NULL, "center");
-
-	volt_sel = max(lkg_volt_sel, pvtm_volt_sel);
-	if (volt_sel >= 0) {
-		snprintf(name, MAX_PROP_NAME_LEN, "L%d", volt_sel);
-		ret = dev_pm_opp_set_prop_name(dev, name);
-		if (ret)
-			dev_err(dev, "Failed to set prop name\n");
+	ret = rockchip_init_opp_table(dev, NULL, "ddr_leakage", "center");
+	if (ret) {
+		dev_err(dev, "Failed to init_opp_table (%d)\n", ret);
+		return ret;
 	}
-
-	if (dev_pm_opp_of_add_table(dev)) {
-		dev_err(dev, "Invalid operating-points in device tree.\n");
-		return -EINVAL;
-	}
-	rockchip_adjust_opp_by_irdrop(dev);
 
 	if (rockchip_dmcfreq_init_freq_table(dev, devp))
 		return -EFAULT;
 
 	data->rate = clk_get_rate(data->dmc_clk);
-	data->volt = regulator_get_voltage(data->vdd_center);
 	devp->initial_freq = data->rate;
 	opp_rate = data->rate;
 
@@ -2971,15 +3012,6 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 	}
 	opp_volt = dev_pm_opp_get_voltage(opp);
 	rcu_read_unlock();
-
-	if (opp_volt != data->volt) {
-		ret = regulator_set_voltage(data->vdd_center, opp_volt,
-					    INT_MAX);
-		if (ret) {
-			dev_err(dev, "Cannot set voltage %lu uV\n", opp_volt);
-			return ret;
-		}
-	}
 
 	of_property_read_u32(np, "auto-freq-en", &data->auto_freq_en);
 	if (!is_events_available && data->auto_freq_en) {
@@ -2993,6 +3025,13 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 			dev_info(dev, "don't add devfreq feature\n");
 			if (data->edev)
 				devfreq_event_disable_edev(data->edev);
+			ret = regulator_set_voltage(data->vdd_center, opp_volt,
+						    INT_MAX);
+			if (ret) {
+				dev_err(dev, "Cannot set voltage %lu uV\n",
+					opp_volt);
+				return ret;
+			}
 			return 0;
 		}
 	}
@@ -3041,12 +3080,6 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 	data->devfreq->last_status.current_frequency = opp_rate;
 	reset_last_status(data->devfreq);
 
-	if (rockchip_drm_register_notifier_to_dmc(data->devfreq))
-		dev_err(dev, "drm fail to register notifier to dmc\n");
-
-	if (rockchip_pm_register_notify_to_dmc(data->devfreq))
-		dev_err(dev, "pd fail to register notify to dmc\n");
-
 	if (vop_register_dmc())
 		dev_err(dev, "fail to register notify to vop.\n");
 
@@ -3083,6 +3116,14 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 		ret = input_register_handler(&data->input_handler);
 		if (ret)
 			dev_err(dev, "failed to register input handler\n");
+	}
+
+	dmc_devdata.data = data->devfreq;
+	data->opp_info = rockchip_register_thermal_notifier(dev,
+							    &dmc_devdata);
+	if (IS_ERR(data->opp_info)) {
+		dev_dbg(dev, "without thermal notifier\n");
+		data->opp_info = NULL;
 	}
 
 	ret = ddr_power_model_simple_init(data);

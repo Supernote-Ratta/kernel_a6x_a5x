@@ -6,7 +6,7 @@
 
 / {
 	chosen {
-		bootargs = "earlyprintk=uart8250,mmio32,0xff160000 swiotlb=1 console=ttyFIQ0 androidboot.baseband=N/A androidboot.selinux=permissive androidboot.veritymode=/dev/block/by-name/metadata androidboot.hardware=rk30board androidboot.console=ttyFIQ0 init=/init kpti=0";
+		bootargs = "earlyprintk=uart8250,mmio32,0xff160000 swiotlb=1 console=ttyFIQ0 androidboot.baseband=N/A androidboot.selinux=permissive androidboot.veritymode=enforcing androidboot.hardware=rk30board androidboot.console=ttyFIQ0 init=/init kpti=0";
 	};
 
 	fiq-debugger {
@@ -69,6 +69,10 @@
 		pmsg-size = <0x0 0x50000>;
 		memory-region = <&ramoops_mem>;
 	};
+};
+
+&cpu0_opp_table {
+	rockchip,avs = <1>;
 };
 
 &display_subsystem {

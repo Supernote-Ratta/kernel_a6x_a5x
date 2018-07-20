@@ -317,9 +317,9 @@ void rockchip_drm_atomic_work(struct work_struct *work)
 	private->commit = NULL;
 }
 
-int rockchip_drm_atomic_commit(struct drm_device *dev,
-			       struct drm_atomic_state *state,
-			       bool async)
+static int rockchip_drm_atomic_commit(struct drm_device *dev,
+				      struct drm_atomic_state *state,
+				      bool async)
 {
 	struct rockchip_drm_private *private = dev->dev_private;
 	struct rockchip_atomic_commit *commit;
@@ -402,6 +402,7 @@ void rockchip_drm_mode_config_init(struct drm_device *dev)
 	 */
 	dev->mode_config.max_width = 8192;
 	dev->mode_config.max_height = 8192;
+	dev->mode_config.async_page_flip = true;
 
 	dev->mode_config.funcs = &rockchip_drm_mode_config_funcs;
 }

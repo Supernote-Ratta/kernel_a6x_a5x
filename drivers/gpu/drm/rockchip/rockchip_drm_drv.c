@@ -49,12 +49,13 @@
 #define DRIVER_DATE	"20140818"
 #define DRIVER_MAJOR	1
 #define DRIVER_MINOR	0
-#define DRIVER_VERSION	"v1.0.0"
+#define DRIVER_VERSION	"v1.0.1"
 
 /***********************************************************************
  *  Rockchip DRM driver version
  *
  *  v1.0.0	: add basic version for rockchip drm driver(hjc)
+ *  v1.0.1	: set frame start to field start for interlace mode(hjc)
  *
  **********************************************************************/
 
@@ -443,9 +444,9 @@ of_parse_display_resource(struct drm_device *drm_dev, struct device_node *route)
 	return set;
 }
 
-int setup_initial_state(struct drm_device *drm_dev,
-			struct drm_atomic_state *state,
-			struct rockchip_drm_mode_set *set)
+static int setup_initial_state(struct drm_device *drm_dev,
+			       struct drm_atomic_state *state,
+			       struct rockchip_drm_mode_set *set)
 {
 	struct rockchip_drm_private *priv = drm_dev->dev_private;
 	struct drm_connector *connector = set->connector;
@@ -894,6 +895,32 @@ static int __init rockchip_clocks_loader_unprotect(void)
 late_initcall_sync(rockchip_clocks_loader_unprotect);
 #endif
 
+int rockchip_drm_crtc_send_mcu_cmd(struct drm_device *drm_dev,
+				   struct device_node *np_crtc,
+				   u32 type, u32 value)
+{
+	struct drm_crtc *crtc;
+	int pipe = 0;
+	struct rockchip_drm_private *priv;
+
+	if (!np_crtc || !of_device_is_available(np_crtc))
+		return -EINVAL;
+
+	drm_for_each_crtc(crtc, drm_dev) {
+		if (of_get_parent(crtc->port) == np_crtc)
+			break;
+	}
+
+	pipe = drm_crtc_index(crtc);
+	if (pipe >= ROCKCHIP_MAX_CRTC)
+		return -EINVAL;
+	priv = crtc->dev->dev_private;
+	if (priv->crtc_funcs[pipe]->crtc_send_mcu_cmd)
+		priv->crtc_funcs[pipe]->crtc_send_mcu_cmd(crtc, type, value);
+
+	return 0;
+}
+
 /*
  * Attach a (component) device to the shared drm dma mapping from master drm
  * device.  This is used by the VOPs to map GEM buffers to a common DMA
@@ -987,7 +1014,7 @@ static void rockchip_drm_crtc_disable_vblank(struct drm_device *dev,
 	struct drm_crtc *crtc = rockchip_crtc_from_pipe(dev, pipe);
 
 	if (crtc && priv->crtc_funcs[pipe] &&
-	    priv->crtc_funcs[pipe]->enable_vblank)
+	    priv->crtc_funcs[pipe]->disable_vblank)
 		priv->crtc_funcs[pipe]->disable_vblank(crtc);
 }
 
@@ -1458,6 +1485,9 @@ static int rockchip_drm_bind(struct device *dev)
 		struct drm_fb_helper *helper = private->fbdev_helper;
 		struct rockchip_crtc_state *s = NULL;
 
+		if (!helper)
+			break;
+
 		s = to_rockchip_crtc_state(crtc->state);
 		if (is_support_hotplug(s->output_type)) {
 			s->crtc_primary_fb = crtc->primary->fb;
@@ -1630,7 +1660,7 @@ static void rockchip_drm_postclose(struct drm_device *dev, struct drm_file *file
 	file->driver_priv = NULL;
 }
 
-void rockchip_drm_lastclose(struct drm_device *dev)
+static void rockchip_drm_lastclose(struct drm_device *dev)
 {
 	struct rockchip_drm_private *priv = dev->dev_private;
 

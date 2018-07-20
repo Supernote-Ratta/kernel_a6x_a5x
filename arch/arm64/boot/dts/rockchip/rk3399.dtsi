@@ -61,6 +61,9 @@
 	#size-cells = <2>;
 
 	aliases {
+		dsi0 = &dsi;
+		dsi1 = &dsi1;
+		ethernet0 = &gmac;
 		i2c0 = &i2c0;
 		i2c1 = &i2c1;
 		i2c2 = &i2c2;
@@ -75,8 +78,6 @@
 		serial2 = &uart2;
 		serial3 = &uart3;
 		serial4 = &uart4;
-		dsi0 = &dsi;
-		dsi1 = &dsi1;
 	};
 
 	cpus {
@@ -755,7 +756,7 @@
 					type = "passive";
 				};
 				soc_crit: soc-crit {
-					temperature = <95000>; /* millicelsius */
+					temperature = <115000>; /* millicelsius */
 					hysteresis = <2000>; /* millicelsius */
 					type = "critical";
 				};
@@ -807,7 +808,7 @@
 		pinctrl-1 = <&otp_out>;
 		pinctrl-2 = <&otp_gpio>;
 		#thermal-sensor-cells = <1>;
-		rockchip,hw-tshut-temp = <95000>;
+		rockchip,hw-tshut-temp = <120000>;
 		status = "disabled";
 	};
 
@@ -1742,10 +1743,8 @@
 
 		gpu_power_model: power_model {
 			compatible = "arm,mali-simple-power-model";
-			voltage = <900>;
-			frequency = <500>;
-			static-power = <300>;
-			dynamic-power = <396>;
+			static-coefficient = <411000>;
+			dynamic-coefficient = <733>;
 			ts = <32000 4700 (-80) 2>;
 			thermal-zone = "gpu-thermal";
 		};
@@ -1911,7 +1910,7 @@
 		interrupts = <GIC_SPI 43 IRQ_TYPE_LEVEL_HIGH 0>;
 		interrupt-names = "isp0_mmu";
 		#iommu-cells = <0>;
-		clocks = <&cru ACLK_ISP0_NOC>, <&cru HCLK_ISP0_NOC>;
+		clocks = <&cru ACLK_ISP0_WRAPPER>, <&cru HCLK_ISP0_WRAPPER>;
 		clock-names = "aclk", "hclk";
 		power-domains = <&power RK3399_PD_ISP0>;
 		rk_iommu,disable_reset_quirk;
@@ -1924,10 +1923,12 @@
 		interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH 0>;
 		clocks = <&cru SCLK_ISP1>,
 			 <&cru ACLK_ISP1>, <&cru HCLK_ISP1>,
-			 <&cru ACLK_ISP1_WRAPPER>, <&cru HCLK_ISP1_WRAPPER>;
+			 <&cru ACLK_ISP1_WRAPPER>, <&cru HCLK_ISP1_WRAPPER>,
+			 <&cru PCLK_ISP1_WRAPPER>;
 		clock-names = "clk_isp",
 			 "aclk_isp", "hclk_isp",
-			 "aclk_isp_wrap", "hclk_isp_wrap";
+			 "aclk_isp_wrap", "hclk_isp_wrap",
+			 "pclk_isp_wrap";
 		devfreq = <&dmc>;
 		power-domains = <&power RK3399_PD_ISP1>;
 		iommus = <&isp1_mmu>;
@@ -1940,7 +1941,7 @@
 		interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH 0>;
 		interrupt-names = "isp1_mmu";
 		#iommu-cells = <0>;
-		clocks = <&cru ACLK_ISP1_NOC>, <&cru HCLK_ISP1_NOC>;
+		clocks = <&cru ACLK_ISP1_WRAPPER>, <&cru HCLK_ISP1_WRAPPER>;
 		clock-names = "aclk", "hclk";
 		power-domains = <&power RK3399_PD_ISP1>;
 		rk_iommu,disable_reset_quirk;
@@ -2042,6 +2043,20 @@
 				};
 			};
 		};
+	};
+
+	mipi_dphy_tx1rx1: mipi-dphy-tx1rx1@0xff968000 {
+		compatible = "rockchip,rk3399-mipi-dphy";
+		reg = <0x0 0xff968000 0x0 0x8000>;
+		clocks = <&cru SCLK_MIPIDPHY_REF>,
+			<&cru SCLK_DPHY_TX1RX1_CFG>,
+			<&cru PCLK_VIO_GRF>,
+			<&cru PCLK_MIPI_DSI1>;
+		clock-names = "dphy-ref", "dphy-cfg",
+			"grf", "pclk_mipi_dsi";
+		rockchip,grf = <&grf>;
+		power-domains = <&power RK3399_PD_VIO>;
+		status = "disabled";
 	};
 
 	edp: edp@ff970000 {
@@ -2801,6 +2816,11 @@
 					<4 18 RK_FUNC_1 &pcfg_pull_none>;
 			};
 
+			pwm0_pin_pull_down: pwm0-pin-pull-down {
+				rockchip,pins =
+					<4 18 RK_FUNC_1 &pcfg_pull_down>;
+			};
+
 			vop0_pwm_pin: vop0-pwm-pin {
 				rockchip,pins =
 					<4 18 RK_FUNC_2 &pcfg_pull_none>;
@@ -2817,12 +2837,22 @@
 				rockchip,pins =
 					<4 22 RK_FUNC_1 &pcfg_pull_none>;
 			};
+
+			pwm1_pin_pull_down: pwm1-pin-pull-down {
+				rockchip,pins =
+					<4 22 RK_FUNC_1 &pcfg_pull_down>;
+			};
 		};
 
 		pwm2 {
 			pwm2_pin: pwm2-pin {
 				rockchip,pins =
 					<1 19 RK_FUNC_1 &pcfg_pull_none>;
+			};
+
+			pwm2_pin_pull_down: pwm2-pin-pull-down {
+				rockchip,pins =
+					<1 19 RK_FUNC_1 &pcfg_pull_down>;
 			};
 		};
 
@@ -2831,12 +2861,22 @@
 				rockchip,pins =
 					<0 6 RK_FUNC_1 &pcfg_pull_none>;
 			};
+
+			pwm3a_pin_pull_down: pwm3a-pin-pull-down {
+				rockchip,pins =
+					<0 6 RK_FUNC_1 &pcfg_pull_down>;
+			};
 		};
 
 		pwm3b {
 			pwm3b_pin: pwm3b-pin {
 				rockchip,pins =
 					<1 14 RK_FUNC_1 &pcfg_pull_none>;
+			};
+
+			pwm3b_pin_pull_down: pwm3b-pin-pull-down {
+				rockchip,pins =
+					<1 14 RK_FUNC_1 &pcfg_pull_down>;
 			};
 		};
 

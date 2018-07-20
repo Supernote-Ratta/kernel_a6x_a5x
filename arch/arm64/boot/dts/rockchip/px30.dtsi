@@ -25,17 +25,17 @@
 	#size-cells = <2>;
 
 	aliases {
+		ethernet0 = &gmac;
+		i2c0 = &i2c0;
+		i2c1 = &i2c1;
+		i2c2 = &i2c2;
+		i2c3 = &i2c3;
 		serial0 = &uart0;
 		serial1 = &uart1;
 		serial2 = &uart2;
 		serial3 = &uart3;
 		serial4 = &uart4;
 		serial5 = &uart5;
-		i2c0 = &i2c0;
-		i2c1 = &i2c1;
-		i2c2 = &i2c2;
-		i2c3 = &i2c3;
-		ethernet0 = &gmac;
 		spi0 = &spi0;
 		spi1 = &spi1;
 	};
@@ -53,7 +53,7 @@
 			#cooling-cells = <2>;
 			dynamic-power-coefficient = <90>;
 			operating-points-v2 = <&cpu0_opp_table>;
-			cpu-idle-states = <&CPU_SLEEP>;
+			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP>;
 		};
 
 		cpu1: cpu@1 {
@@ -62,7 +62,7 @@
 			reg = <0x0 0x1>;
 			enable-method = "psci";
 			operating-points-v2 = <&cpu0_opp_table>;
-			cpu-idle-states = <&CPU_SLEEP>;
+			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP>;
 		};
 		cpu2: cpu@2 {
 			device_type = "cpu";
@@ -70,7 +70,7 @@
 			reg = <0x0 0x2>;
 			enable-method = "psci";
 			operating-points-v2 = <&cpu0_opp_table>;
-			cpu-idle-states = <&CPU_SLEEP>;
+			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP>;
 		};
 		cpu3: cpu@3 {
 			device_type = "cpu";
@@ -78,7 +78,7 @@
 			reg = <0x0 0x3>;
 			enable-method = "psci";
 			operating-points-v2 = <&cpu0_opp_table>;
-			cpu-idle-states = <&CPU_SLEEP>;
+			cpu-idle-states = <&CPU_SLEEP &CLUSTER_SLEEP>;
 		};
 
 		idle-states {
@@ -109,6 +109,7 @@
 		opp-shared;
 
 		clocks = <&cru PLL_APLL>;
+		rockchip,avs-scale = <4>;
 		rockchip,max-volt = <1350000>;
 		rockchip,evb-irdrop = <25000>;
 		nvmem-cells = <&cpu_leakage>;
@@ -126,7 +127,7 @@
 		rockchip,pvtm-error = <1000>;
 		rockchip,pvtm-ref-temp = <40>;
 		rockchip,pvtm-temp-prop = <(-56) (-56)>;
-		rockchip,pvtm-thermal-zone = "soc-thermal";
+		rockchip,thermal-zone = "soc-thermal";
 
 		opp-408000000 {
 			opp-hz = /bits/ 64 <408000000>;
@@ -201,6 +202,58 @@
 			     <GIC_SPI 102 IRQ_TYPE_LEVEL_HIGH>,
 			     <GIC_SPI 103 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-affinity = <&cpu0>, <&cpu1>, <&cpu2>, <&cpu3>;
+	};
+
+	bus_soc: bus-soc {
+		compatible = "rockchip,px30-bus";
+		rockchip,busfreq-policy = "autocs";
+		soc-bus0 {
+			bus-id = <0>;
+			timer-us = <20>;
+			enable-msk = <0x40f7>;
+			status = "disabled";
+		};
+		soc-bus1 {
+			bus-id = <1>;
+			timer-us = <200>;
+			enable-msk = <0x40bf>;
+			status = "disabled";
+		};
+		soc-bus2 {
+			bus-id = <2>;
+			timer-us = <200>;
+			enable-msk = <0x4007>;
+			status = "disabled";
+		};
+	};
+
+	bus_apll: bus-apll {
+		compatible = "rockchip,px30-bus";
+		rockchip,busfreq-policy = "clkfreq";
+		clocks = <&cru PLL_APLL>;
+		clock-names = "bus";
+		operating-points-v2 = <&bus_apll_opp_table>;
+		status = "disabled";
+	};
+
+	bus_apll_opp_table: bus-apll-opp-table {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp-1512000000 {
+			opp-hz = /bits/ 64 <1512000000>;
+			opp-microvolt = <1000000>;
+		};
+		opp-1008000000 {
+			opp-hz = /bits/ 64 <1008000000>;
+			opp-microvolt = <950000>;
+		};
+	};
+
+	cpuinfo {
+		compatible = "rockchip,cpuinfo";
+		nvmem-cells = <&otp_id>;
+		nvmem-cell-names = "id";
 	};
 
 	display_subsystem: display-subsystem {
@@ -413,6 +466,9 @@
 		clock-names = "mclk_tx", "mclk_rx", "hclk";
 		dmas = <&dmac 16>, <&dmac 17>;
 		dma-names = "tx", "rx";
+		resets = <&cru SRST_I2S0_TX>, <&cru SRST_I2S0_RX>;
+		reset-names = "tx-m", "rx-m";
+		rockchip,cru = <&cru>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2s0_8ch_sclktx
 			     &i2s0_8ch_sclkrx
@@ -462,12 +518,14 @@
 	};
 
 	pdm: pdm@ff0a0000 {
-		compatible = "rockchip,pdm";
+		compatible = "rockchip,px30-pdm", "rockchip,pdm";
 		reg = <0x0 0xff0a0000 0x0 0x1000>;
 		clocks = <&cru SCLK_PDM>, <&cru HCLK_PDM>;
 		clock-names = "pdm_clk", "pdm_hclk";
 		dmas = <&dmac 24>;
 		dma-names = "rx";
+		resets = <&cru SRST_PDM>;
+		reset-names = "pdm-m";
 		pinctrl-names = "default";
 		pinctrl-0 = <&pdm_clk0m0
 			     &pdm_clk1
@@ -847,7 +905,7 @@
 					type = "passive";
 				};
 				soc_crit: soc-crit {
-					temperature = <95000>;
+					temperature = <115000>;
 					hysteresis = <2000>;
 					type = "critical";
 				};
@@ -887,7 +945,7 @@
 		resets = <&cru SRST_TSADC>;
 		reset-names = "tsadc-apb";
 		#thermal-sensor-cells = <1>;
-		rockchip,hw-tshut-temp = <100000>;
+		rockchip,hw-tshut-temp = <120000>;
 		status = "disabled";
 	};
 
@@ -911,6 +969,8 @@
 		clocks = <&cru SCLK_OTP_USR>, <&cru PCLK_OTP_NS>,
 			 <&cru PCLK_OTP_PHY>;
 		clock-names = "clk_otp", "pclk_otp", "pclk_otp_phy";
+		resets = <&cru SRST_OTP_PHY>;
+		reset-names = "otp_phy";
 
 		/* Data cells */
 		otp_id: id@7 {
@@ -923,13 +983,19 @@
 
 	cru: clock-controller@ff2b0000 {
 		compatible = "rockchip,px30-cru";
-		reg = <0x0 0xff2b0000 0x0 0x9000>;
+		reg = <0x0 0xff2b0000 0x0 0x1000>;
 		rockchip,grf = <&grf>;
+		rockchip,boost = <&cpu_boost>;
 		#clock-cells = <1>;
 		#reset-cells = <1>;
 
-		assigned-clocks = <&cru PLL_NPLL>, <&cru ARMCLK>;
-		assigned-clock-rates = <1188000000>, <816000000>;
+		assigned-clocks = <&cru PLL_NPLL>;
+		assigned-clock-rates = <1188000000>;
+	};
+
+	cpu_boost: cpu-boost@ff2b8000 {
+		compatible = "syscon";
+		reg = <0x0 0xff2b8000 0x0 0x1000>;
 	};
 
 	pmucru: pmu-clock-controller@ff2bc000 {
@@ -941,14 +1007,16 @@
 
 		assigned-clocks =
 			<&pmucru PLL_GPLL>, <&pmucru PCLK_PMU_PRE>,
-			<&pmucru SCLK_WIFI_PMU>, <&cru ACLK_BUS_PRE>,
-			<&cru ACLK_PERI_PRE>, <&cru HCLK_BUS_PRE>,
-			<&cru HCLK_PERI_PRE>, <&cru PCLK_BUS_PRE>;
+			<&pmucru SCLK_WIFI_PMU>, <&cru ARMCLK>,
+			<&cru ACLK_BUS_PRE>, <&cru ACLK_PERI_PRE>,
+			<&cru HCLK_BUS_PRE>, <&cru HCLK_PERI_PRE>,
+			<&cru PCLK_BUS_PRE>, <&cru SCLK_GPU>;
 		assigned-clock-rates =
 			<1200000000>, <100000000>,
-			<26000000>, <200000000>,
-			<200000000>, <150000000>,
-			<150000000>, <100000000>;
+			<26000000>, <600000000>,
+			<200000000>, <200000000>,
+			<150000000>, <150000000>,
+			<100000000>, <200000000>;
 	};
 
 	usb2phy_grf: syscon@ff2c0000 {

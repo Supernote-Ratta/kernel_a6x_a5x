@@ -207,6 +207,7 @@ struct rockchip_usb2phy_cfg {
  * @port_id: flag for otg port or host port.
  * @low_power_en: enable enter low power when suspend.
  * @perip_connected: flag for periphyeral connect status.
+ * @prev_iddig: previous otg port id pin status.
  * @suspended: phy suspended flag.
  * @utmi_avalid: utmi avalid status usage flag.
  *	true	- use avalid to get vbus status
@@ -236,6 +237,7 @@ struct rockchip_usb2phy_port {
 	unsigned int	port_id;
 	bool		low_power_en;
 	bool		perip_connected;
+	bool		prev_iddig;
 	bool		suspended;
 	bool		utmi_avalid;
 	bool		vbus_attached;
@@ -741,6 +743,9 @@ static int rockchip_usb2phy_exit(struct phy *phy)
 
 	if (rport->port_id == USB2PHY_PORT_HOST)
 		cancel_delayed_work_sync(&rport->sm_work);
+	else if (rport->port_id == USB2PHY_PORT_OTG &&
+		 rport->bvalid_irq > 0)
+		flush_delayed_work(&rport->otg_sm_work);
 
 	return 0;
 }
@@ -832,7 +837,7 @@ static ssize_t otg_mode_show(struct device *device,
 {
 	struct rockchip_usb2phy *rphy = dev_get_drvdata(device);
 	struct rockchip_usb2phy_port *rport = NULL;
-	int index;
+	unsigned int index;
 
 	for (index = 0; index < rphy->phy_cfg->num_ports; index++) {
 		rport = &rphy->ports[index];
@@ -869,7 +874,8 @@ static ssize_t otg_mode_store(struct device *device,
 	struct rockchip_usb2phy *rphy = dev_get_drvdata(device);
 	struct rockchip_usb2phy_port *rport = NULL;
 	enum usb_dr_mode new_dr_mode;
-	int index, rc = count;
+	unsigned int index;
+	int rc = count;
 
 	for (index = 0; index < rphy->phy_cfg->num_ports; index++) {
 		rport = &rphy->ports[index];
@@ -1543,6 +1549,7 @@ static int rockchip_usb2phy_otg_port_init(struct rockchip_usb2phy *rphy,
 	rport->vbus_attached = false;
 	rport->vbus_enabled = false;
 	rport->perip_connected = false;
+	rport->prev_iddig = true;
 
 	mutex_init(&rport->mutex);
 
@@ -1687,7 +1694,8 @@ static int rockchip_usb2phy_probe(struct platform_device *pdev)
 	const struct rockchip_usb2phy_cfg *phy_cfgs;
 	const struct of_device_id *match;
 	unsigned int reg;
-	int index, ret;
+	unsigned int index;
+	int ret;
 
 	rphy = devm_kzalloc(dev, sizeof(*rphy), GFP_KERNEL);
 	if (!rphy)
@@ -1825,9 +1833,10 @@ disable_clks:
 	return ret;
 }
 
-static int rockchip_usb2phy_low_power_enable(struct rockchip_usb2phy *rphy,
-					struct rockchip_usb2phy_port *rport,
-					bool value)
+static int __maybe_unused
+rockchip_usb2phy_low_power_enable(struct rockchip_usb2phy *rphy,
+				  struct rockchip_usb2phy_port *rport,
+				  bool value)
 {
 	int ret = 0;
 
@@ -2027,7 +2036,7 @@ static int rockchip_usb2phy_pm_suspend(struct device *dev)
 {
 	struct rockchip_usb2phy *rphy = dev_get_drvdata(dev);
 	struct rockchip_usb2phy_port *rport;
-	int index;
+	unsigned int index;
 	int ret = 0;
 
 	for (index = 0; index < rphy->phy_cfg->num_ports; index++) {
@@ -2038,6 +2047,8 @@ static int rockchip_usb2phy_pm_suspend(struct device *dev)
 		if (rport->port_id == USB2PHY_PORT_OTG &&
 		    rport->id_irq > 0) {
 			mutex_lock(&rport->mutex);
+			rport->prev_iddig = property_enabled(rphy,
+						&rport->port_cfg->utmi_iddig);
 			ret = rockchip_usb2phy_enable_id_irq(rphy, rport,
 							     false);
 			mutex_unlock(&rport->mutex);
@@ -2068,7 +2079,8 @@ static int rockchip_usb2phy_pm_resume(struct device *dev)
 {
 	struct rockchip_usb2phy *rphy = dev_get_drvdata(dev);
 	struct rockchip_usb2phy_port *rport;
-	int index;
+	unsigned int index;
+	bool iddig;
 	int ret = 0;
 
 	if (rphy->phy_cfg->phy_tuning)
@@ -2082,6 +2094,8 @@ static int rockchip_usb2phy_pm_resume(struct device *dev)
 		if (rport->port_id == USB2PHY_PORT_OTG &&
 		    rport->id_irq > 0) {
 			mutex_lock(&rport->mutex);
+			iddig = property_enabled(rphy,
+						 &rport->port_cfg->utmi_iddig);
 			ret = rockchip_usb2phy_enable_id_irq(rphy, rport,
 							     true);
 			mutex_unlock(&rport->mutex);
@@ -2091,20 +2105,17 @@ static int rockchip_usb2phy_pm_resume(struct device *dev)
 				return ret;
 			}
 
-			if (!property_enabled(rphy,
-					      &rport->port_cfg->utmi_iddig) &&
-			    !extcon_get_cable_state_(rphy->edev,
-						     EXTCON_USB_HOST)) {
+			if (iddig != rport->prev_iddig) {
 				dev_dbg(&rport->phy->dev,
-					"port power on when resume\n");
+					"iddig changed during resume\n");
+				rport->prev_iddig = iddig;
 				extcon_set_state_sync(rphy->edev,
 						      EXTCON_USB_HOST,
-						      true);
-				/* Enable VBUS supply */
+						      !iddig);
 				extcon_set_state_sync(rphy->edev,
 						      EXTCON_USB_VBUS_EN,
-						      true);
-				ret = rockchip_set_vbus_power(rport, true);
+						      !iddig);
+				ret = rockchip_set_vbus_power(rport, !iddig);
 				if (ret)
 					return ret;
 			}
