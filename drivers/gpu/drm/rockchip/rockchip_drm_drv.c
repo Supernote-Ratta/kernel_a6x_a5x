@@ -1276,6 +1276,8 @@ static void rockchip_gem_pool_destroy(struct drm_device *drm)
 	gen_pool_destroy(private->secure_buffer_pool);
 }
 
+static int force_disconnected = 0;
+
 static void rockchip_attach_connector_property(struct drm_device *drm)
 {
 	struct drm_connector *connector;
@@ -1284,6 +1286,8 @@ static void rockchip_attach_connector_property(struct drm_device *drm)
 	mutex_lock(&drm->mode_config.mutex);
 
 	drm_for_each_connector(connector, drm) {
+		if (force_disconnected)
+			connector->force = DRM_FORCE_OFF;
 #define ROCKCHIP_PROP_ATTACH(prop, v) \
 	drm_object_attach_property(&connector->base, prop, v)
 
@@ -1915,6 +1919,9 @@ static int rockchip_drm_platform_probe(struct platform_device *pdev)
 		component_match_add(dev, &match, compare_of, port);
 		of_node_put(port);
 	}
+
+	if (of_property_read_bool(np, "force-disconnected"))
+		force_disconnected = 1;
 
 	return component_master_add_with_match(dev, &rockchip_drm_ops, match);
 }
