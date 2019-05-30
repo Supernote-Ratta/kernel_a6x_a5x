@@ -104,14 +104,20 @@ static int rk816_shutdown(struct regmap *regmap)
 				 DEV_OFF, DEV_OFF);
 	return ret;
 }
-
+static struct i2c_client *rk808_i2c_client;
 static int rk818_shutdown(struct regmap *regmap)
 {
 	int ret;
+	int data;
+	struct rk808 *rk808 = i2c_get_clientdata(rk808_i2c_client);
 
+	printk("%s xxxxxx\n",__func__);
 	ret = regmap_update_bits(regmap,
 				 RK818_DEVCTRL_REG,
 				 DEV_OFF, DEV_OFF);
+
+	regmap_read(rk808->regmap, RK818_DEVCTRL_REG, &data);
+	printk("%s ....data = %d\n",__func__, data);
 	return ret;
 }
 
@@ -809,7 +815,7 @@ static const struct rk808_reg_data rk817_pre_init_reg[] = {
 
 static int (*pm_shutdown)(struct regmap *regmap);
 static int (*pm_shutdown_prepare)(struct rk808 *rk808);
-static struct i2c_client *rk808_i2c_client;
+//static struct i2c_client *rk808_i2c_client;
 static struct rk808_reg_data *suspend_reg, *resume_reg;
 static int suspend_reg_num, resume_reg_num;
 
@@ -889,8 +895,9 @@ static struct syscore_ops rk808_syscore_ops = {
  */
 static void rk808_pm_power_off_dummy(void)
 {
+	struct rk808 *rk808 = i2c_get_clientdata(rk808_i2c_client);
 	pr_info("Dummy power off for RK8xx PMICs, should never reach here!\n");
-
+	regmap_write(rk808->regmap, 0xf4, 1);
 	while (1)
 		;
 }
@@ -1346,7 +1353,7 @@ static int rk808_probe(struct i2c_client *client,
 		 * If not assigned(e.g. PSCI is not enable), we provide a
 		 * dummy for it to avoid halt in Reboot system call.
 		 */
-		if (!pm_power_off)
+		/*if (!pm_power_off)*/
 			pm_power_off = rk808_pm_power_off_dummy;
 	}
 
