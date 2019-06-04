@@ -1,0 +1,33 @@
+#
+# ebc bootup animation configuration
+#
+menu "ebc boot animation config"
+	depends on EBC
+config EBC_BOOT_ANI_LOOP
+	bool "bootup animation loop"
+	depends on EBC_BOOT_ANI
+	---help---
+	select this config,support bootup animation loop,else none.
+
+config EBC_ANI_CYC_TIME
+	int "bootup animation cycle time"
+	depends on EBC_BOOT_ANI
+	default "1000"
+---help---
+	time = value*1 ms
+
+	
+choice
+	prompt "bootup animation brush mode"
+	depends on EBC_BOOT_ANI
+	default EBC_BOOT_ANI_PART
+config EBC_BOOT_ANI_A2
+	bool "EBC_BOOT_ANI_A2"
+config EBC_BOOT_ANI_PART
+	bool "EBC_BOOT_ANI_PART"	
+config EBC_BOOT_ANI_FULL
+	bool "EBC_BOOT_ANI_FULL"	
+endchoice
+	
+endmenu
+

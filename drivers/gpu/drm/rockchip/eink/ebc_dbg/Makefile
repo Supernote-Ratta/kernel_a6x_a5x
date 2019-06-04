@@ -1,0 +1,1 @@
+obj-$(CONFIG_EBC) += rk29_ebc_dbg.o

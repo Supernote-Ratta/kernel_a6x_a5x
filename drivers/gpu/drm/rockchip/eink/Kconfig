@@ -1,0 +1,93 @@
+menuconfig EBC
+	bool "eBook Controller"
+#	depends on FB_ROCKCHIP
+	help
+	eBook controller could help to driver the electronic ink screen.
+
+choice
+	prompt "Controller type select"
+	depends on EBC
+	help
+	Two type support, hardware means that controller is embedded
+	in cpu inside(exp RK3026), software means that using lcdc
+	controller to simulate the eink timing(exp RK3188 & RK3288).
+config SOFTWARE_EBC
+	bool "Software eBook controller"
+endchoice
+
+choice
+	prompt "Eink temperature sensor"
+	depends on EBC
+	default EPD_TPS65185_SENSOR
+config EPD_LM75
+	bool "LM75"
+config EPD_NTC
+	bool "NTC"
+config EPD_G871
+	bool "G871"
+config EPD_TPS65185_SENSOR
+	bool "Tps65185"
+endchoice
+
+choice
+	prompt "Waveform stored position"
+	depends on EBC
+	default WAVEFORM_FROM_NAND_FLASH
+config WAVEFORM_FROM_GPIO_SPI
+	bool "gpio analog spi flash"
+config WAVEFORM_FROM_RK_SPI
+	bool "RK spi flash"
+config WAVEFORM_FROM_NAND_FLASH
+	bool "nand flash"
+config WAVEFORM_FROM_WAVEFORM_FILE
+	bool "ramdisk file"
+endchoice
+
+choice
+	prompt "Waveform format"
+	depends on EBC
+config RKF_WAVEFORM
+	bool "RKF Waveform Format"
+config PVI_WAVEFORM
+	bool "PVI Waveform Format"
+config OED_WAVEFORM
+	bool "OED Waveform Format"
+endchoice
+
+choice
+	prompt "GRAY16 refresh mode"
+	depends on EBC
+	default GRAY16_TO_GL16
+config GRAY16_TO_GC16
+	bool "Map to GC16"
+config GRAY16_TO_GL16
+	bool "Map to GL16"
+config GRAY16_TO_GLR16
+	bool "Map to GLR16"
+config GRAY16_TO_GLD16
+	bool "Map to GLD16"
+endchoice
+
+choice
+	prompt "AUTO refresh mode"
+	depends on EBC
+	default AUTO_TO_GC16
+config AUTO_TO_GC16
+	bool "Map to GC16"
+config AUTO_TO_GL16
+	bool "Map to GL16"
+config AUTO_TO_GLR16
+	bool "Map to GLR16"
+config AUTO_TO_GLD16
+	bool "Map to GLD16"
+endchoice
+
+config EBC_BOOT_ANI
+	bool "bootup animation"
+	depends on EBC
+	help
+	This could help to support a kernel bootup animation
+
+if EBC_BOOT_ANI
+	source "drivers/gpu/drm/rockchip/eink/bootani/Kconfig"
+endif
