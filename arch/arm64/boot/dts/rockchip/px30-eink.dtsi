@@ -1,0 +1,57 @@
+/*
+ * Copyright (c) 2017 Fuzhou Rockchip Electronics Co., Ltd
+ *
+ * SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+ */
+
+/ {
+	aliases {
+		tcon0 = &tcon0;
+		tcon1 = &tcon1;
+	};
+
+	reserved-memory {
+		display_reserved: framebuffer@78000000 {
+			reg = <0x0 0x78000000 0x0 0x600000>;
+			no-map;
+		};
+	};
+
+	tcon0: tcon@ff460000 {
+		compatible = "rockchip,px30-eink-tcon";
+		reg = <0x0 0xff460000 0x0 0x1fc>;
+		interrupts = <GIC_SPI 77 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&cru ACLK_VOPB>, <&cru DCLK_VOPB>,
+			 <&cru HCLK_VOPB>;
+		clock-names = "aclk", "dclk", "hclk";
+		power-domains = <&power PX30_PD_VO>;
+		rockchip,grf = <&grf>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&lcdc_rgb_dclk_pin
+			     &lcdc_rgb_m0_hsync_pin
+			     &lcdc_rgb_m0_vsync_pin
+			     &lcdc_rgb_m0_den_pin
+			     &lcdc_rgb888_m0_data_pins>;
+		status = "disabled";
+	};
+
+	tcon1: tcon@ff470000 {
+		compatible = "rockchip,px30-eink-tcon";
+		reg = <0x0 0xff470000 0x0 0x1fc>;
+		interrupts = <GIC_SPI 78 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&cru ACLK_VOPL>, <&cru DCLK_VOPL>,
+			 <&cru HCLK_VOPL>;
+		clock-names = "aclk", "dclk", "hclk";
+		power-domains = <&power PX30_PD_VO>;
+		rockchip,grf = <&grf>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&lcdc_rgb_dclk_pin
+			     &lcdc_rgb_m0_hsync_pin
+			     &lcdc_rgb_m0_vsync_pin
+			     &lcdc_rgb_m0_den_pin
+			     &lcdc_rgb888_m0_data_pins>;
+		status = "disabled";
+	};
+};
