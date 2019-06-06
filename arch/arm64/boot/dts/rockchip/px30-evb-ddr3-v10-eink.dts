@@ -181,7 +181,7 @@
 };
 
 &display_subsystem {
-//	force-disconnected;
+	force-disconnected;
 	status = "okay";
 };
 
