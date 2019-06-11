@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"1.02"
+#define RKEBC_DRV_VERSION		"1.03"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
@@ -131,7 +131,7 @@ struct ebc_buf_info{
 	int win_x2;
 	int win_y2;
 	int rotate;
-};
+}__packed;
 
 // ebc sn
 struct ebc_sn_info{
