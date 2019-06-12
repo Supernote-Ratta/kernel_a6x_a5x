@@ -14,6 +14,13 @@ if INPUT_TOUCHSCREEN
 config TOUCHSCREEN_PROPERTIES
 	def_tristate INPUT
 	depends on INPUT
+    
+config TOUCHSCREEN_FT5X_TS
+       tristate  "ft5x touchscreen driver(sunty eink)"
+       default n
+       depends on INPUT && I2C
+       help
+         ft5x touchscreen driver
 
 config TOUCHSCREEN_88PM860X
 	tristate "Marvell 88PM860x touchscreen"
