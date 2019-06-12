@@ -156,6 +156,24 @@
 		regulator-max-microvolt = <3800000>;
 	};
 
+	eink_power: eink-power {
+		compatible = "regulator-fixed";
+		regulator-name = "eink_power";
+		gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
+	eink_3v3: eink-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "eink-3v3";
+		gpio = <&gpio0 RK_PA2 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
 	wireless-wlan {
 		compatible = "wlan-platdata";
 		wifi_chip_type = "ap6212";
@@ -584,8 +602,6 @@
 		wakeup_pin = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
 		vcomctl_pin = <&gpio0 RK_PB3 GPIO_ACTIVE_HIGH>;
 		powerup_pin = <&gpio0 RK_PB2 GPIO_ACTIVE_HIGH>;
-		tps_3v3_pin = <&gpio0 RK_PA2 GPIO_ACTIVE_HIGH>;
-		elink_power_pin = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
 	};
 
 
