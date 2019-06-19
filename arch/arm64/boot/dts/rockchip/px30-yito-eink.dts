@@ -294,6 +294,14 @@
 &i2c0 {
 	status = "okay";
 
+	bq24296: bq24296@6b {
+		compatible = "ti,bq24296";
+		reg = <0x6b>;
+		gpios = <&gpio0 RK_PC1 0>;   //gpio0_c1
+		bq24296,chg_current = <1000 2000 3000>;
+		status = "okay";
+	};
+
 	rk809: pmic@20 {
 		compatible = "rockchip,rk809";
 		reg = <0x20>;
