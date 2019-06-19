@@ -567,6 +567,14 @@
 		//gpio_full_led = <&gpio5 4 GPIO_ACTIVE_LOW>;
 	};
 
+	wacom: wacom@09 {
+		compatible = "wacom,w9013";
+		reg = <0x09>;
+		gpio_detect = <&gpio2 RK_PA5 GPIO_ACTIVE_HIGH>;   //gpio2_a5
+		gpio_intr = <&gpio2 RK_PA6 GPIO_ACTIVE_HIGH>;    //gpio2_a6
+		gpio_rst = <&gpio2 RK_PA7 GPIO_ACTIVE_HIGH>;     //gpio2_a7
+	};
+
 	sensor@4c {
 		status = "okay";
 		compatible = "gs_mma7660";
