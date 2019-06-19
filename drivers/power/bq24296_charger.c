@@ -31,6 +31,12 @@
 #include <linux/of.h>
 #include <linux/of_device.h>
 
+#define USE_WAKE_LOCK
+#ifdef USE_WAKE_LOCK
+#include <linux/wakelock.h>
+static struct wake_lock charge_lock;
+#endif
+
 struct bq24296_device_info *bq24296_di;
 struct bq24296_board *bq24296_pdata;
 static int bq24296_int = 0;
@@ -56,14 +62,14 @@ static int bq24296_i2c_reg8_read(const struct i2c_client *client, const char reg
 	msgs[0].flags = client->flags;
 	msgs[0].len = 1;
 	msgs[0].buf = &reg_buf;
-	msgs[0].scl_rate = scl_rate;
+//	msgs[0].scl_rate = scl_rate;
 //	msgs[0].udelay = client->udelay;
 
 	msgs[1].addr = client->addr;
 	msgs[1].flags = client->flags | I2C_M_RD;
 	msgs[1].len = count;
 	msgs[1].buf = (char *)buf;
-	msgs[1].scl_rate = scl_rate;
+//	msgs[1].scl_rate = scl_rate;
 //	msgs[1].udelay = client->udelay;
 
 	ret = i2c_transfer(adap, msgs, 2);
@@ -87,7 +93,7 @@ static int bq24296_i2c_reg8_write(const struct i2c_client *client, const char re
 	msg.flags = client->flags;
 	msg.len = count + 1;
 	msg.buf = (char *)tx_buf;
-	msg.scl_rate = scl_rate;
+//	msg.scl_rate = scl_rate;
 //	msg.udelay = client->udelay;
 
 	ret = i2c_transfer(adap, &msg, 1);
@@ -152,6 +158,7 @@ static int bq24296_update_reg(struct i2c_client *client, int reg, u8 value, u8 m
 static int bq24296_init_registers(void)
 {
 	int ret = 0;
+	u8 reg = 0;
 
 	/* reset the register */
 	/*
@@ -188,6 +195,19 @@ static int bq24296_init_registers(void)
 				__func__);
 		goto final;
 	}
+
+	/* Set Charge Voltage  */
+	ret = bq24296_update_reg(bq24296_di->client,
+				CHARGE_VOLTAGE_CONTROL_REGISTER,
+				CHARGE_VOLTAGE_4352V << CHARGE_VOLTAGE_OFFSET,
+				CHARGE_VOLTAGE_MASK << CHARGE_VOLTAGE_OFFSET);
+	if (ret < 0) {
+		dev_err(&bq24296_di->client->dev, "%s(): Failed to set charge voltage \n",
+				__func__);
+		goto final;
+	}
+	bq24296_read(bq24296_di->client, CHARGE_VOLTAGE_CONTROL_REGISTER, &reg, 1);
+	printk("CHARGE_VOLTAGE_CONTROL_REGISTER =0x%x\n", reg);
 
 	/* Set Termination Current Limit as 128mA */
 	ret = bq24296_update_reg(bq24296_di->client,
@@ -250,6 +270,8 @@ static int bq24296_update_input_current_limit(u8 value)
  static int bq24296_set_charge_current(u8 value)
 {
 	int ret = 0;
+	//int chg_current = 0;
+	//int i =0;
 
 	ret = bq24296_update_reg(bq24296_di->client,
 				CHARGE_CURRENT_CONTROL_REGISTER,
@@ -258,7 +280,36 @@ static int bq24296_update_input_current_limit(u8 value)
 		dev_err(&bq24296_di->client->dev, "%s(): Failed to set charge current limit (0x%x) \n",
 				__func__, value);
 	}
+//	for(i=0;i<12;i++)
+//	{
+//		bq24296_read(bq24296_di->client,i,&chg_current,1);
+//		DBG("reg %d value %x\n",i,chg_current);		
+//	}
+
+	
 	return ret;
+}
+
+static void bq24296_set_ir_bat_comp(u8 value)
+{
+	int ret = 0;
+		ret = bq24296_update_reg(bq24296_di->client,
+				bq24296_CON12,
+				(value << CON12_BAT_COMP_SHIFT) ,(CON12_BAT_COMP_MASK <<CON12_BAT_COMP_SHIFT ));
+	if (ret < 0) {
+		printk("bq24296_set_ir_bat_comp error !\n");
+	}
+}
+
+static void bq24296_set_ir_bat_vclamp(u8 value)
+{
+	int ret = 0;
+		ret = bq24296_update_reg(bq24296_di->client,
+				bq24296_CON12,
+				(value << CON12_BAT_VCLAMP_SHIFT) ,(CON12_BAT_VCLAMP_MASK <<CON12_BAT_VCLAMP_SHIFT ));
+	if (ret < 0) {
+		printk("bq24296_set_ir_bat_vclamp error !\n");
+	}
 }
 	
 static int bq24296_update_en_hiz_disable(void)
@@ -327,7 +378,7 @@ static int bq24296_update_otg_mode_current(u8 value)
 	return ret;
 }
 
-static int bq24296_charge_mode_config(int on)
+ int bq24296_charge_mode_config(int on)
 {
 
 	if(!bq24296_int)
@@ -362,8 +413,10 @@ static int bq24296_charge_mode_config(int on)
 	return ret;
 }
 
-extern int dwc_otg_check_dpdm(bool wait);
+//extern int dwc_otg_check_dpdm(bool wait);
 //extern int get_gadget_connect_flag(void);
+
+//extern int usb_type;
 
 static void usb_detect_work_func(struct work_struct *work)
 {
@@ -371,7 +424,9 @@ static void usb_detect_work_func(struct work_struct *work)
 	struct bq24296_device_info *pi = (struct bq24296_device_info *)container_of(delayed_work, struct bq24296_device_info, usb_detect_work);
 	u8 retval = 0;
 	int ret ;
-
+#ifdef USE_WAKE_LOCK
+	static int wakelockcnt = 0;
+#endif
 	ret = bq24296_read(bq24296_di->client, 0x08, &retval, 1);
 	if (ret < 0) {
 		dev_err(&bq24296_di->client->dev, "%s: err %d\n", __func__, ret);
@@ -381,37 +436,25 @@ static void usb_detect_work_func(struct work_struct *work)
 	}else
 		bq24296_chag_down =0;
 
-	DBG("%s: retval = %08x bq24296_chag_down = %d\n", __func__,retval,bq24296_chag_down);
+	//printk("%s: retval = %08x bq24296_chag_down = %d\n", __func__,retval,bq24296_chag_down);
 
 	mutex_lock(&pi->var_lock);
 	
-	if (gpio_is_valid(bq24296_pdata->dc_det_pin)){
-			ret = gpio_request(bq24296_pdata->dc_det_pin, "bq24296_dc_det");
-			if (ret < 0) {
-				DBG("Failed to request gpio %d with ret:""%d\n",bq24296_pdata->dc_det_pin, ret);
-			}
-			gpio_direction_input(bq24296_pdata->dc_det_pin);
-			ret = gpio_get_value(bq24296_pdata->dc_det_pin);
-			if (ret ==0){
-				bq24296_update_input_current_limit(bq24296_di->adp_input_current);
-				bq24296_set_charge_current(CHARGE_CURRENT_2048MA);
-				bq24296_charge_mode_config(0);
-			}
-			else {
-				bq24296_update_input_current_limit(IINLIM_500MA);
-				bq24296_set_charge_current(CHARGE_CURRENT_512MA);
-			}
-			gpio_free(bq24296_pdata->dc_det_pin);
-			DBG("%s: bq24296_di->dc_det_pin=%x\n", __func__, ret);
-	}
-	else{
-			DBG("%s: dwc_otg_check_dpdm %d\n", __func__, dwc_otg_check_dpdm(0));
-			switch(dwc_otg_check_dpdm(0))
+			switch(1)
 			{
-				case 2: // USB Wall charger
+				case 3: // USB Wall charger
+				case 2:
 				bq24296_update_input_current_limit(bq24296_di->usb_input_current);
 				bq24296_set_charge_current(CHARGE_CURRENT_2048MA);
 				bq24296_charge_mode_config(0);
+#ifdef USE_WAKE_LOCK				
+				if(!(wakelockcnt =  wake_lock_active(&charge_lock)))
+				{
+	   	     printk("charger aquire wake lock\n");
+				 wake_lock(&charge_lock); 
+				}
+#endif
+				//printk("charger is online, lock the system +++\n");
 				DBG("bq24296: detect usb wall charger\n");
 				break;
 				case 1: //normal USB
@@ -424,19 +467,27 @@ static void usb_detect_work_func(struct work_struct *work)
 				#endif
 				// connect to pc	
 				bq24296_update_input_current_limit(bq24296_di->usb_input_current);
-				bq24296_set_charge_current(CHARGE_CURRENT_512MA);
+				bq24296_set_charge_current(CHARGE_CURRENT_2048MA);
 				bq24296_charge_mode_config(0);
 				DBG("bq24296: detect normal usb charger\n");
 				//	}
 				break;
+				case 0:
 				default:
 				bq24296_update_input_current_limit(IINLIM_500MA);
 				bq24296_set_charge_current(CHARGE_CURRENT_512MA);
+#ifdef USE_WAKE_LOCK				
+				while(wake_lock_active(&charge_lock))
+			 {
+				printk("charger release wake lock\n");
+				wake_unlock(&charge_lock);
+			 }
+#endif
+				
 				DBG("bq24296: detect no usb \n");			
 				break;
 				}
-		}
-
+		
 	mutex_unlock(&pi->var_lock);
 	
 	schedule_delayed_work(&pi->usb_detect_work, 1*HZ);
@@ -482,11 +533,12 @@ static struct bq24296_board *bq24296_parse_dt(struct bq24296_device_info *di)
 		printk("invalid gpio: %d\n",  pdata->chg_irq_pin);
 	}
 
+#if 0//qtj
 	pdata->dc_det_pin = of_get_named_gpio(bq24296_np,"gpios",1);
 	if (!gpio_is_valid(pdata->dc_det_pin)) {
 		printk("invalid gpio: %d\n",  pdata->dc_det_pin);
 	}
-	
+#endif	
 	return pdata;
 }
 
@@ -505,13 +557,13 @@ static struct of_device_id bq24296_battery_of_match[] = {
 MODULE_DEVICE_TABLE(of, bq24296_battery_of_match);
 #endif
 
-static int bq24296_battery_suspend(struct i2c_client *client, pm_message_t mesg)
+static int bq24296_battery_suspend(struct device *dev)
 {
 	cancel_delayed_work_sync(&bq24296_di->usb_detect_work);
 	return 0;
 }
 
-static int bq24296_battery_resume(struct i2c_client *client)
+static int bq24296_battery_resume(struct device *dev)
 {
 	schedule_delayed_work(&bq24296_di->usb_detect_work, msecs_to_jiffies(50));
 	return 0;
@@ -525,7 +577,7 @@ static int bq24296_battery_probe(struct i2c_client *client,const struct i2c_devi
 	struct device_node *bq24296_node;
 	int ret = -EINVAL;
 	
-	 DBG("%s,line=%d\n", __func__,__LINE__);
+	 printk("%s,line=%d\n", __func__,__LINE__);
 	 
 	 bq24296_node = of_node_get(client->dev.of_node);
 	if (!bq24296_node) {
@@ -575,6 +627,9 @@ static int bq24296_battery_probe(struct i2c_client *client,const struct i2c_devi
 	INIT_DELAYED_WORK(&di->usb_detect_work, usb_detect_work_func);
 	schedule_delayed_work(&di->usb_detect_work, 0);
 	bq24296_init_registers();
+	bq24296_set_ir_bat_comp(0x4);
+	bq24296_set_ir_bat_vclamp(0x2);
+	
 
 
 	if (gpio_is_valid(pdev->chg_irq_pin)){
@@ -588,8 +643,10 @@ static int bq24296_battery_probe(struct i2c_client *client,const struct i2c_devi
 	}
 
 	bq24296_int =1;
-
-	DBG("bq24296_battery_probe ok");
+#ifdef USE_WAKE_LOCK
+  wake_lock_init(&charge_lock, WAKE_LOCK_SUSPEND, "charge_lock");
+#endif
+	printk("bq24296_battery_probe ok");
 	return 0;
 
 err_chgirq_failed:
@@ -608,7 +665,8 @@ static void bq24296_battery_shutdown(struct i2c_client *client)
 
 static int bq24296_battery_remove(struct i2c_client *client)
 {
-
+	struct bq24296_device_info *di = i2c_get_clientdata(client);
+	kfree(di);
 	return 0;
 }
 
@@ -616,17 +674,23 @@ static const struct i2c_device_id bq24296_id[] = {
 	{ "bq24296", 0 },
 };
 
+static const struct dev_pm_ops bq24296_pm_ops = {
+	.suspend = bq24296_battery_suspend,
+	.resume = bq24296_battery_resume,
+};
+
 static struct i2c_driver bq24296_battery_driver = {
 	.driver = {
 		.name = "bq24296",
 		.owner = THIS_MODULE,
 		.of_match_table =of_match_ptr(bq24296_battery_of_match),
+		.pm = &bq24296_pm_ops,
 	},
 	.probe = bq24296_battery_probe,
 	.remove = bq24296_battery_remove,
 	.shutdown = bq24296_battery_shutdown,
-	.suspend = bq24296_battery_suspend,
-	.resume = bq24296_battery_resume,
+//	.suspend = bq24296_battery_suspend,
+//	.resume = bq24296_battery_resume,
 	.id_table = bq24296_id,
 };
 

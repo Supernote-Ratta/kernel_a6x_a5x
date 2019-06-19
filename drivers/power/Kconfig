@@ -574,7 +574,10 @@ config CHARGER_RT9455
 	select REGMAP_I2C
 	help
 	  Say Y to enable support for Richtek RT9455 battery charger.
-
+config CHARGER_BQ24296
+	tristate "BQ24296 chargeIC driver"
+	help
+	  Say Y here to enable support for batteries with BQ24296 (I2C/HDQ) chips.
 config AXP20X_POWER
 	tristate "AXP20x power supply driver"
 	depends on MFD_AXP20X

@@ -19,6 +19,13 @@
 #define FAULT_STATS_REGISTER		0x09
 #define VENDOR_STATS_REGISTER		0x0A
 
+#define bq24296_CON12      			0x0C
+#define CON12_BAT_COMP_MASK      	0x07
+#define CON12_BAT_COMP_SHIFT     	5
+#define CON12_BAT_VCLAMP_MASK       0x07
+#define CON12_BAT_VCLAMP_SHIFT      2
+
+
 /* power-on configuration register value */
 #define REGISTER_RESET_ENABLE	 1
 #define REGISTER_RESET_DISABLE	 0
@@ -114,6 +121,17 @@
 #define OTG_MODE_CURRENT_CONFIG_1300MA		0x01
 #define OTG_MODE_CURRENT_CONFIG_OFFSET		0
 #define OTG_MODE_CURRENT_CONFIG_MASK		0x01
+
+/* Charge voltage Config */
+/*
+bit7~bit2  1011,00 ---4208
+bit7~bit2  1101,01 ---4352
+*/
+#define CHARGE_VOLTAGE_4208V				0x2c
+#define CHARGE_VOLTAGE_4352V				0x35
+#define CHARGE_VOLTAGE_OFFSET				0x2
+#define CHARGE_VOLTAGE_MASK					0x3f
+
 
 #define BQ24296_CHG_COMPELET       0x03
 #define BQ24296_NO_CHG             0x00
