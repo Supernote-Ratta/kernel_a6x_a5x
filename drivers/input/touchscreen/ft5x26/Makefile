@@ -1,0 +1,1 @@
+obj-$(CONFIG_TOUCHSCREEN_FT5X26_TS)	+= ft5x26_ts.o

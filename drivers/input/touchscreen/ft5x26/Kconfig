@@ -1,0 +1,10 @@
+#
+#  Touchscreen ft5x driver configuration
+#
+
+config TOUCHSCREEN_FT5X26_TS
+       tristate  "ft5x26 touchscreen driver"
+       default y
+       depends on INPUT && I2C
+       help
+         ft5x touchscreen driver
