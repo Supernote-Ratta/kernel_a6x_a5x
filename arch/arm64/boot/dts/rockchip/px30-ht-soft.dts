@@ -21,6 +21,8 @@
 		compatible = "rockchip,eink";
 		tcon = <&tcon1>;
 		memory-region = <&display_reserved>;
+		nvmem = <&otp>;
+		nvmem-names = "rockchip-otp";
 
 		/* ES103TC1 */
 		#if 0
