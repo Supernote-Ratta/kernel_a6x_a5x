@@ -11,6 +11,11 @@
 	};
 
 	reserved-memory {
+		waveform_reserved: waveform@8300000 {
+			reg = <0x0 0x08300000 0x0 0x100000>;
+			no-map;
+		};
+
 		display_reserved: framebuffer@10000000 {
 			reg = <0x0 0x10000000 0x0 0x600000>;
 			no-map;

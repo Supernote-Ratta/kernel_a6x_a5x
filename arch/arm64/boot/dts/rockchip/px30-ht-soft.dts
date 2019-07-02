@@ -21,6 +21,7 @@
 		compatible = "rockchip,eink";
 		tcon = <&tcon1>;
 		memory-region = <&display_reserved>;
+		waveform-region = <&waveform_reserved>;
 		nvmem = <&otp>;
 		nvmem-names = "rockchip-otp";
 
