@@ -59,4 +59,14 @@
 			     &lcdc_rgb888_m0_data_pins>;
 		status = "disabled";
 	};
+
+	eink: eink {
+		compatible = "rockchip,eink";
+		tcon = <&tcon0>;
+		memory-region = <&display_reserved>;
+		waveform-region = <&waveform_reserved>;
+		nvmem = <&otp>;
+		nvmem-names = "rockchip-otp";
+		status = "disabled";
+	};
 };
