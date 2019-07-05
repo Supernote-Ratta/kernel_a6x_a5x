@@ -41,6 +41,8 @@ config WAVEFORM_FROM_NAND_FLASH
 	bool "nand flash"
 config WAVEFORM_FROM_WAVEFORM_FILE
 	bool "ramdisk file"
+config WAVEFORM_FROM_MEM_RESERVED
+        bool "mem reserved"
 endchoice
 
 choice

@@ -23,6 +23,7 @@
 #define LUT_FROM_RK_SPI_FLASH		(1)
 #define LUT_FROM_NAND_FLASH		(2)
 #define LUT_FROM_WAVEFORM_FILE		(3)
+#define LUT_FROM_MEM_RESERVED		(4)
 
 enum epd_lut_type {
 	WF_TYPE_RESET	= 1,

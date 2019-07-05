@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"1.04"
+#define RKEBC_DRV_VERSION		"1.05"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)

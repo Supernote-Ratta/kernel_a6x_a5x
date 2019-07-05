@@ -49,7 +49,7 @@ void ebc_io_ctl_hook(unsigned int cmd, struct ebc_buf_info *info)
  *
  *	support_tps_3v3_always_alive()
  */
-int get_waveform_type()
+int get_waveform_type(void)
 {
 #ifdef CONFIG_RKF_WAVEFORM
 	return RKF_WAVEFORM;
@@ -62,7 +62,7 @@ int get_waveform_type()
 #endif
 }
 
-int get_waveform_position()
+int get_waveform_position(void)
 {
 #ifdef CONFIG_WAVEFORM_FROM_GPIO_SPI
 	return LUT_FROM_GPIO_SPI_FLASH;
@@ -72,10 +72,12 @@ int get_waveform_position()
 	return LUT_FROM_NAND_FLASH;
 #elif defined(CONFIG_WAVEFORM_FROM_WAVEFORM_FILE)
 	return LUT_FROM_WAVEFORM_FILE;
+#elif defined(CONFIG_WAVEFORM_FROM_MEM_RESERVED)
+	return LUT_FROM_MEM_RESERVED;
 #endif
 }
 
-int set_end_display()
+int set_end_display(void)
 {
 #ifdef CONFIG_END_PICTURE
 	return END_PICTURE;
