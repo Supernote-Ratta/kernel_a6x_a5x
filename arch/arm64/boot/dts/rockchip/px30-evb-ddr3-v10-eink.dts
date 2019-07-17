@@ -18,53 +18,6 @@
 	model = "Rockchip PX30 evb ddr3 board";
 	compatible = "rockchip,px30-evb-ddr3-v10-eink", "rockchip,px30";
 
-	eink: eink {
-		compatible = "rockchip,eink";
-		tcon = <&tcon1>;
-		memory-region = <&display_reserved>;
-		waveform-region = <&waveform_reserved>;
-		nvmem = <&otp>;
-		nvmem-names = "rockchip-otp";
-
-		/* ES103TC1 */
-		/*panel,width = <1872>;
-		panel,height = <1404>;
-		panel,vir_width = <1872>;
-		panel,vir_height = <1404>;
-		panel,sdck = <33300000>;
-		panel,pixels-per-sdck = <8>;
-		panel,lsl = <11>;
-		panel,lbl = <8>;
-		panel,ldl = <234>;
-		panel,lel = <23>;
-		panel,gdck-sta = <10>;
-		panel,lgonl = <215>;
-		panel,fsl = <1>;
-		panel,fbl = <4>;
-		panel,fdl = <1404>;
-		panel,fel = <12>;
-		panel,vcom-mv = <1560>;*/
-
-		/* ED097TC2U1 */
-		panel,width = <1200>;
-		panel,height = <825>;
-		panel,vir_width = <1200>;
-		panel,vir_height = <832>;
-		panel,sdck = <25000000>;
-		panel,pixels-per-sdck = <4>;
-		panel,lsl = <4>;
-		panel,lbl = <4>;
-		panel,ldl = <300>;
-		panel,lel = <36>;
-		panel,gdck-sta = <18>;
-		panel,lgonl = <265>;
-		panel,fsl = <2>;
-		panel,fbl = <4>;
-		panel,fdl = <825>;
-		panel,fel = <24>;
-		panel,vcom-mv = <1930>;
-	};
-
 	adc-keys {
 		compatible = "adc-keys";
 		io-channels = <&saradc 2>;
