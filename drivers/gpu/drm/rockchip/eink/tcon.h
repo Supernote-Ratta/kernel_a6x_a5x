@@ -16,16 +16,14 @@ struct eink_tcon {
 	struct regmap *grf;
 	struct phy *phy;
 
-	void (*flush)(struct eink_tcon *tcon, dma_addr_t addr);
-	dma_addr_t (*get_current_address)(struct eink_tcon *tcon);
+	struct eink_buffer *buf;
+	void (*flush)(struct eink_tcon *tcon, struct eink_buffer *buf);
 	int (*enable)(struct eink_tcon *tcon, struct eink_panel *panel);
 	void (*disable)(struct eink_tcon *tcon);
-
-	int mcuisr_cnt;
-	int (*mcuisr_callback)(void);
 };
 
-static inline int eink_tcon_enable(struct eink_tcon *tcon, struct eink_panel *panel)
+static inline int eink_tcon_enable(struct eink_tcon *tcon,
+				   struct eink_panel *panel)
 {
 	return tcon->enable(tcon, panel);
 }
@@ -35,14 +33,10 @@ static inline void eink_tcon_disable(struct eink_tcon *tcon)
 	tcon->disable(tcon);
 }
 
-static inline dma_addr_t eink_tcon_get_current_address(struct eink_tcon *tcon)
+static inline void eink_tcon_flush(struct eink_tcon *tcon,
+				   struct eink_buffer *buf)
 {
-	return tcon->get_current_address(tcon);
-}
-
-static inline void eink_tcon_flush(struct eink_tcon *tcon, dma_addr_t addr)
-{
-	tcon->flush(tcon, addr);
+	tcon->flush(tcon, buf);
 }
 
 #endif	/* _EINK_TCON_H_ */

@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"1.05"
+#define RKEBC_DRV_VERSION		"1.06"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
@@ -144,6 +144,7 @@ struct rk29_ebc_info{
 	int is_busy_now;
 	char frame_total;
 	char frame_bw_total;
+	char frame_a2_total;
 	short int auto_need_refresh;
 	int frame_left;
 	int ebc_send_count;
@@ -173,8 +174,7 @@ struct rk29_ebc_info{
 	int    *auto_image_old;
 	char   *auto_frame_buffer;
 	int   	*auto_image_fb;
-	void *auto_direct_buffer0;
-	void *auto_direct_buffer1;
+	void *auto_direct_buffer[EINK_FB_NUM];
 
 	int ebc_power_status;
 	int ebc_last_display;

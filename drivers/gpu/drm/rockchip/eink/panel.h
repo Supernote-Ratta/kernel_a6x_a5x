@@ -1,6 +1,18 @@
 #ifndef _EINK_PANEL_H_
 #define _EINK_PANEL_H_
 
+#include <linux/dma-mapping.h>
+
+#define EINK_FB_NUM	2
+
+struct eink_buffer {
+	void *virt_addr;
+	dma_addr_t phys_addr;
+	size_t size;
+
+	void (*complete)(void);
+};
+
 struct eink_panel {
 	struct device *dev;
 	u32 width;
@@ -39,8 +51,9 @@ struct eink_panel {
 	u32 top_data;
 	u32 eink_totle;
 	u32 line_rel;
-	u8 *ink_group;
-	u8 *ink_group_next;
+	struct eink_tcon *tcon;
+	struct eink_buffer fb[EINK_FB_NUM];
+	int current_buffer;
 	int color_panel;
 	int rotate;
 	int vcom_mv;
