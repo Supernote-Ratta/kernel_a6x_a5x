@@ -565,6 +565,7 @@
 
 &i2c1 {
 	status = "okay";
+	clock-frequency = <400000>;
 
 	ft5x26: ft5x26@38 {
 		compatible = "focaltech,ft5x26";
@@ -583,7 +584,7 @@
 	};
 
 	sensor@4c {
-		status = "okay";
+		status = "disabled";
 		compatible = "gs_mma7660";
 		reg = <0x4c>;
 		type = <SENSOR_TYPE_ACCEL>;
