@@ -277,8 +277,8 @@ static void papyrus_hw_send_powerup(struct papyrus_sess *sess)
 	stat |= papyrus_hw_setreg(sess, PAPYRUS_ADDR_DWNSEQ1, sess->dwnseq1);
 
 	// commit it, so that we can adjust vcom through "Rk_ebc_power_control_Release_v1.1" 
-	stat |= papyrus_hw_setreg(sess, PAPYRUS_ADDR_VCOM1_ADJUST, sess->vcom1);
-	stat |= papyrus_hw_setreg(sess, PAPYRUS_ADDR_VCOM2_ADJUST, sess->vcom2);
+	//stat |= papyrus_hw_setreg(sess, PAPYRUS_ADDR_VCOM1_ADJUST, sess->vcom1);
+	//stat |= papyrus_hw_setreg(sess, PAPYRUS_ADDR_VCOM2_ADJUST, sess->vcom2);
 
 #if 1
 	/* Enable 3.3V switch to the panel */
@@ -306,7 +306,7 @@ static void papyrus_hw_send_powerdown(struct papyrus_sess *sess)
 	/* switch to standby mode, keep 3.3V & VEE & VDDH & VPOS & VNEG alive, 
 	 * don't enable vcom buffer
 	 */
-	sess->enable_reg_shadow = (0x40 | 0x10 | 0x0F);
+	sess->enable_reg_shadow = (0x40 | 0x20 | 0x0F);
 	stat = papyrus_hw_setreg(sess, PAPYRUS_ADDR_ENABLE, sess->enable_reg_shadow);
 	
 	do_gettimeofday(&sess->standby_tv);
@@ -383,13 +383,13 @@ static int papyrus_hw_arg_init(struct papyrus_sess *sess)
 	sess->vadj = 0x03;
 	
 	sess->upseq0 = SEQ_VNEG(0) | SEQ_VEE(1) | SEQ_VPOS(2) | SEQ_VDD(3);
-	sess->upseq1 = UDLY_3ms(0) | UDLY_3ms(1) | UDLY_3ms(2) | UDLY_3ms(0);
+	sess->upseq1 = UDLY_3ms(0) | UDLY_3ms(1) | UDLY_3ms(2) | UDLY_3ms(3);
 	
-	sess->dwnseq0 = SEQ_VDD(0) | SEQ_VPOS(0) | SEQ_VEE(2) | SEQ_VNEG(3);
-	sess->dwnseq1 = DDLY_6ms(0) | DDLY_6ms(1) | DDLY_6ms(2) | DDLY_6ms(0);
+	sess->dwnseq0 = SEQ_VDD(0) | SEQ_VPOS(1) | SEQ_VEE(2) | SEQ_VNEG(3);
+	sess->dwnseq1 = DDLY_6ms(0) | DDLY_6ms(1) | DDLY_6ms(2) | DDLY_6ms(3);
 
-	sess->vcom1 = (PAPYRUS_MV_TO_VCOMREG(1900) & 0x00FF);
-	sess->vcom2 = ((PAPYRUS_MV_TO_VCOMREG(1900) & 0x0100) >> 8);
+	sess->vcom1 = (PAPYRUS_MV_TO_VCOMREG(2500) & 0x00FF);
+	sess->vcom2 = ((PAPYRUS_MV_TO_VCOMREG(2500) & 0x0100) >> 8);
 #else
 	sess->vadj = 0x03;
 
