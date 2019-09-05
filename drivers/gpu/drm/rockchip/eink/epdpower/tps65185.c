@@ -941,7 +941,7 @@ int tps65185_vcom_get(void)
 	int stat = 0;
 	int read_vcom_mv = 0;
 
-	tps65185_printk("tps65185_vcom_set enter.\n");
+	tps65185_printk("tps65185_vcom_get enter.\n");
 	if(!tpmic_sess_data.is_inited)
 		return -1;
 	// VERIFICATION
