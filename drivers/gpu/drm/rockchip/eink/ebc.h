@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"2.05"
+#define RKEBC_DRV_VERSION		"2.06"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
@@ -81,6 +81,7 @@ enum epd_refresh_mode {
 	EPD_OED_PART	= 10,
 	EPD_DIRECT_PART	= 11,
 	EPD_DIRECT_A2	= 12,
+	EPD_AUTO_DU	= 16,
 };
 
 #define EBC_OFF      (0)
@@ -144,7 +145,6 @@ struct rk29_ebc_info{
 	int is_busy_now;
 	char frame_total;
 	char frame_bw_total;
-	char frame_a2_total;
 	short int auto_need_refresh;
 	int frame_left;
 	int ebc_send_count;
