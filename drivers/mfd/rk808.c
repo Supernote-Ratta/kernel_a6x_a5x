@@ -1394,7 +1394,7 @@ static int rk808_suspend(struct device *dev)
 		ret = regmap_update_bits(rk808->regmap,
 					 RK817_SYS_CFG(3),
 					 RK817_SLPPIN_FUNC_MSK,
-					 SLPPIN_NULL_FUN);
+					 SLPPIN_SLP_FUN);
 		if (ret) {
 			dev_err(dev, "suspend: config SLPPIN_NULL_FUN error!\n");
 			return -1;
