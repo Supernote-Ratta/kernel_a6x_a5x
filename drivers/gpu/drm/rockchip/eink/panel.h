@@ -57,6 +57,7 @@ struct eink_panel {
 	int color_panel;
 	int rotate;
 	int vcom_mv;
+	int mirror;
 };
 
 #endif	/* _EINK_TCON_H_ */
