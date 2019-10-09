@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"3.02"
+#define RKEBC_DRV_VERSION		"3.03"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
@@ -56,6 +56,8 @@
 #define SET_EBC_SEND_BUFFER (0x7001)
 #define GET_EBC_DRIVER_SN (0x7002)
 #define GET_EBC_BUFFER_INFO (0x7003)
+#define SET_EBC_AUTO_BG (0x7004)
+#define CLR_EBC_AUTO_BG (0x7005)
 
 #define EBC_DRIVER_SN "RK29_EBC_DRIVER_VERSION_1.00"
 #define EBC_DRIVER_SN_LEN sizeof(EBC_DRIVER_SN)
@@ -75,13 +77,13 @@ enum epd_refresh_mode {
 	EPD_FULL_DITHER = 4,
 	EPD_RESET	= 5,
 	EPD_BLACK_WHITE = 6,
-	EPD_TEXT	= 7,
+	EPD_BG	= 7,
 	EPD_BLOCK	= 8,
 	EPD_FULL_WIN	= 9,
 	EPD_OED_PART	= 10,
 	EPD_DIRECT_PART	= 11,
 	EPD_DIRECT_A2	= 12,
-	EPD_AUTO_DU	= 16,
+	EPD_AUTO_BG	= 16,
 };
 
 #define EBC_OFF      (0)
@@ -172,6 +174,7 @@ struct rk29_ebc_info{
 
 	int    *auto_image_new;
 	int    *auto_image_old;
+	int    *auto_image_bg;
 	char   *auto_frame_buffer;
 	int   	*auto_image_fb;
 	void *auto_direct_buffer[EINK_FB_NUM];
