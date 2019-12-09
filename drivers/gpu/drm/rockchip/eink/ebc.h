@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"3.05"
+#define RKEBC_DRV_VERSION		"3.06"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
@@ -85,6 +85,7 @@ enum epd_refresh_mode {
 	EPD_DIRECT_PART	= 11,
 	EPD_DIRECT_A2	= 12,
 	EPD_AUTO_BG	= 16,
+	EPD_UNBLOCK	= 17,
 };
 
 #define EBC_OFF      (0)
@@ -206,6 +207,9 @@ struct rk29_ebc_info{
 	struct work_struct	auto_buffer_work;
 	struct work_struct	bootup_ani;
 	struct workqueue_struct *bootup_ani_wq;
+
+	/*early suspend*/
+	int is_early_suspend;
 };
 
 struct eink {
