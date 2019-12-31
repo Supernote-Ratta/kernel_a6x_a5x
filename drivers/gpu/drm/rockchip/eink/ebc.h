@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"3.06"
+#define RKEBC_DRV_VERSION		"3.07"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
@@ -113,6 +113,8 @@ struct ebc_pwr_ops
 	int (*power_on)(void);
 	int (*power_down)(void);
 	int (*vcom_set)(int vcom_mv);
+	int (*power_hw_sleep)(void);
+	int (*power_hw_resume)(void);
 };
 struct ebc_temperateure_ops
 {

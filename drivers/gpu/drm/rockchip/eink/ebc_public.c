@@ -1,4 +1,5 @@
 #include "ebc.h"
+#define CONFIG_DOUBLE_THREAD_CALCU
 
 void ebc_io_ctl_hook(unsigned int cmd, struct ebc_buf_info *info)
 {
