@@ -531,6 +531,9 @@ static int inno_video_phy_power_on(struct phy *phy)
 	phy_update_bits(inno, REGISTER_PART_ANALOG, 0x00,
 			POWER_WORK_MASK, POWER_WORK_ENABLE);
 
+	/* lcdc m1 pins driver strength, use 0x33 for eink default, you can adjust it */
+	writel(0x33, (inno->phy_base + 0x394));
+
 	switch (inno->mode) {
 	case PHY_MODE_VIDEO_MIPI:
 		inno_video_phy_mipi_mode_enable(inno);
