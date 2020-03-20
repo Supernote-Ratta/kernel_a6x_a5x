@@ -34,7 +34,7 @@
 
 #include "power.h"
 
-const char *pm_labels[] = { "mem", "standby", "freeze", NULL };
+const char *pm_labels[] = { "mem", "idle", "standby", "freeze", NULL };
 const char *pm_states[PM_SUSPEND_MAX];
 
 unsigned int pm_suspend_global_flags;
@@ -164,7 +164,7 @@ EXPORT_SYMBOL_GPL(suspend_set_ops);
  */
 int suspend_valid_only_mem(suspend_state_t state)
 {
-	return state == PM_SUSPEND_MEM;
+	return (state == PM_SUSPEND_MEM) || (state == PM_SUSPEND_IDLE);
 }
 EXPORT_SYMBOL_GPL(suspend_valid_only_mem);
 

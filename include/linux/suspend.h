@@ -36,9 +36,10 @@ typedef int __bitwise suspend_state_t;
 #define PM_SUSPEND_ON		((__force suspend_state_t) 0)
 #define PM_SUSPEND_FREEZE	((__force suspend_state_t) 1)
 #define PM_SUSPEND_STANDBY	((__force suspend_state_t) 2)
-#define PM_SUSPEND_MEM		((__force suspend_state_t) 3)
+#define PM_SUSPEND_IDLE		((__force suspend_state_t) 3)
+#define PM_SUSPEND_MEM		((__force suspend_state_t) 4)
 #define PM_SUSPEND_MIN		PM_SUSPEND_FREEZE
-#define PM_SUSPEND_MAX		((__force suspend_state_t) 4)
+#define PM_SUSPEND_MAX		((__force suspend_state_t) 5)
 
 enum suspend_stat_step {
 	SUSPEND_FREEZE = 1,
@@ -537,6 +538,7 @@ static inline void page_key_read(unsigned long *pfn) {}
 static inline void page_key_memorize(unsigned long *pfn) {}
 static inline void page_key_write(void *address) {}
 
+suspend_state_t get_suspend_state(void);
 #endif /* !CONFIG_ARCH_SAVE_PAGE_KEYS */
 
 #endif /* _LINUX_SUSPEND_H */

@@ -2320,6 +2320,20 @@ int regulator_disable(struct regulator *regulator)
 }
 EXPORT_SYMBOL_GPL(regulator_disable);
 
+int regulator_suspend_disable(struct regulator *regulator)
+{
+	struct regulator_dev *rdev = regulator->rdev;
+	int ret = 0;
+
+	mutex_lock(&rdev->mutex);
+        if (rdev && rdev->desc && rdev->desc->ops && rdev->desc->ops->set_suspend_disable)
+        	ret = rdev->desc->ops->set_suspend_disable(rdev);
+	mutex_unlock(&rdev->mutex);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(regulator_suspend_disable);
+
 /* locks held by regulator_force_disable() */
 static int _regulator_force_disable(struct regulator_dev *rdev)
 {
