@@ -30,6 +30,9 @@
 #include <linux/kthread.h>
 
 #include <linux/notifier.h>
+#include <linux/regulator/driver.h>
+#include <linux/regulator/consumer.h>
+
 static struct cyttsp5_core_data *priv_data;
 extern int register_wacom_touch_event_notifier(struct notifier_block*);
 extern int unregister_wacom_touch_event_notifier(struct notifier_block*);
@@ -4804,14 +4807,11 @@ static int cyttsp5_core_suspend(struct device *dev)
 	disable_irq(cd->irq);
 	cd->irq_disabled = 1;
 
-	if (device_may_wakeup(dev)) {
-		parade_debug(dev, DEBUG_LEVEL_2, "%s Device MAY wakeup\n",
-			__func__);
-		if (!enable_irq_wake(cd->irq))
-			cd->irq_wake = 1;
+	if (get_suspend_state() == PM_SUSPEND_IDLE) {
+		enable_irq_wake(cd->irq);
+		cd->irq_wake = 1;
 	} else {
-		parade_debug(dev, DEBUG_LEVEL_1, "%s Device MAY NOT wakeup\n",
-			__func__);
+                 regulator_suspend_disable(cd->supply);
 	}
 
 	return 0;
@@ -4835,16 +4835,9 @@ static int cyttsp5_core_resume(struct device *dev)
 		cd->irq_disabled = 0;
 	}
 
-	if (device_may_wakeup(dev)) {
-		parade_debug(dev, DEBUG_LEVEL_2, "%s Device MAY wakeup\n",
-			__func__);
-		if (cd->irq_wake) {
-			disable_irq_wake(cd->irq);
-			cd->irq_wake = 0;
-		}
-	} else {
-		parade_debug(dev, DEBUG_LEVEL_1, "%s Device MAY NOT wakeup\n",
-			__func__);
+	if (cd->irq_wake) {
+		disable_irq_wake(cd->irq);
+		cd->irq_wake = 0;
 	}
 
 //exit:
@@ -4880,7 +4873,7 @@ static int cyttsp5_pm_notifier(struct notifier_block *nb,
 #endif
 
 const struct dev_pm_ops cyttsp5_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(cyttsp5_core_suspend, cyttsp5_core_resume)
+	SET_LATE_SYSTEM_SLEEP_PM_OPS(cyttsp5_core_suspend, cyttsp5_core_resume)
 	SET_RUNTIME_PM_OPS(cyttsp5_core_rt_suspend, cyttsp5_core_rt_resume,
 			NULL)
 };
@@ -6170,6 +6163,10 @@ int cyttsp5_probe(const struct cyttsp5_bus_ops *ops, struct device *dev,
 	cd->pm_notifier.notifier_call = cyttsp5_pm_notifier;
 	register_pm_notifier(&cd->pm_notifier);
 #endif
+
+	cd->supply = devm_regulator_get(dev, "cytp");
+	if (cd->supply)
+		printk("touch supply = %dmv\n",  regulator_get_voltage(cd->supply));
 
 	if (!priv_data) {
 		priv_data = cd;

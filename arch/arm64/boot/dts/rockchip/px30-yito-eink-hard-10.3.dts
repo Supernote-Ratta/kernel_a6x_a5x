@@ -538,7 +538,7 @@ rk_key {
 
 				regulator-name = "vcc_sd";
 				regulator-state-mem {
-					regulator-off-in-suspend;
+					regulator-on-in-suspend;
 					regulator-suspend-microvolt = <3300000>;
 
 				};
@@ -784,7 +784,7 @@ rk_key {
 			/*interrupts = <GIC_SPI 7 IRQ_TYPE_LEVEL_HIGH>;*/
 			cy,adapter_id = "cyttsp5_i2c_adapter";
 			status = "okay";
-
+			cytp-supply = <&vcc_sd>;
 			cy,core {
 				cy,name = "cyttsp5_core";
 

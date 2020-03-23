@@ -1020,6 +1020,8 @@ struct cyttsp5_core_data {
 	u8 debug_level;
 	u32 watchdog_interval;
 	u8 show_timestamp;
+	struct regulator *supply;  
+
 	//2019-03-22 add delayedwork modify watchdog time
 #ifdef CYTTSP_WATCHDOG_DELAY_ENBALE
 	struct delayed_work watchdog_enable_work;
