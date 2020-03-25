@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"3.12"
+#define RKEBC_DRV_VERSION		"3.13"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
@@ -254,5 +254,9 @@ extern int get_bootup_ani_mode(void);
 extern int support_tps_3v3_always_alive(void);
 extern int map_auto_mode(void);
 extern int map_gray16_mode(void);
+
+int rk29_ebc_lowpower_pic_show(void);
+int rk29_ebc_show_white_background(void);
+int ebc_charge_disp(void);
 
 #endif
