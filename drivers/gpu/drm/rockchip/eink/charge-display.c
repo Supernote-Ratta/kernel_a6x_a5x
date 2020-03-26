@@ -172,8 +172,30 @@ int ebc_charge_disp(void)
 	struct device_node *temp_np;
 	int i = 0;
 	int ret = 0;
-	u32 out_value;
+	u32 pre_charge_on, out_value;
 	struct ebc_charge_display *ebc_chr_disp_info;
+
+	temp_np = of_find_node_by_name(NULL, "charge-animation");
+	if (temp_np) {
+		ret = of_property_read_u32(temp_np, "rockchip,kernel-precharge-on", &pre_charge_on);
+		if (ret < 0) {
+			pr_info("rockchip,kernel-precharge-on not defined\n");
+			return 0;
+		} else if (pre_charge_on != 1) {
+			pr_info("kernel precharge off\n");
+			return 0;
+		}
+
+		ret = of_property_read_u32(temp_np, "rockchip,kernel-exit-charge-level", &out_value);
+		if (ret < 0) {
+			pr_info("rockchip,kernel-exit-charge-level not defined\n");
+			return 0;
+		}
+	}
+	else {
+		pr_info("no charge-animation node defined\n");
+		return 0;
+	}
 
 	ebc_chr_disp_info = kzalloc(sizeof(*ebc_chr_disp_info), GFP_KERNEL);
 	if (!ebc_chr_disp_info) {
@@ -189,14 +211,7 @@ int ebc_charge_disp(void)
 	}
 	INIT_DELAYED_WORK(&ebc_chr_disp_info->charge_delay_work, ebc_charge_delay_work);
 
-	temp_np = of_find_node_by_name(NULL, "charge-animation");
-	if (temp_np) {
-		ret = of_property_read_u32(temp_np, "rockchip,uboot-exit-charge-level", &out_value);
-		if (ret >= 0) {
-			ebc_chr_disp_info->bat.exit_charge_level = out_value;
-			pr_info("exit charge level: %d\n", out_value);
-		}
-	}
+	ebc_chr_disp_info->bat.exit_charge_level = out_value;
 
 	ebc_get_chrg_psy(ebc_chr_disp_info);
 	ebc_get_bat_info(ebc_chr_disp_info);
@@ -216,27 +231,15 @@ int ebc_charge_disp(void)
 				goto exit;
 
 			if (!ebc_get_charge_state(ebc_chr_disp_info)) {
-				pr_info("%s: low power and charger plug out, poweroff\n", __func__);
-				rk29_ebc_show_white_background();
+				pr_info("%s: low power and charger plug out, power off......\n", __func__);
+				//rk29_ebc_show_white_background();
 				ebc_chr_disp_info->reboot_mode = EPD_POWEROFF;
 				queue_delayed_work(ebc_chr_disp_info->charge_wq,
 						   &ebc_chr_disp_info->charge_delay_work,
 						   msecs_to_jiffies(1000));
 				return -1;
 			}
-			/*
-			if (rk8xx_is_pwrkey_long_press(2000)) {
-				dev_info(ebc_info->dev, "long press power key, reboot\n");
-				ebc_info->reboot_mode = EPD_REBOOT;
-				queue_delayed_work(ebc_info->charge_wq,
-						   &ebc_info->charge_delay_work,
-						   msecs_to_jiffies(100 * 5));
-				ebc_charge_show_background(ebc_info);
-				return 1;
-			}
-			*/
 			msleep(500);
-			//wake_up_process(ebc_auto_task);
 			if ((i++) % 40 == 0)
 				pr_info("capacity:%d%%, voltage:%dmV, charging...\n",
 					 ebc_chr_disp_info->bat.capacity, ebc_chr_disp_info->bat.voltage);

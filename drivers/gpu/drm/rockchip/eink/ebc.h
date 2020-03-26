@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"3.13"
+#define RKEBC_DRV_VERSION		"3.14"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
@@ -212,6 +212,8 @@ struct rk29_ebc_info{
 
 	/*early suspend*/
 	int is_early_suspend;
+	/*deep sleep*/
+	int is_deep_sleep;
 };
 
 struct eink {
