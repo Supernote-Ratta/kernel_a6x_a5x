@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"3.15"
+#define RKEBC_DRV_VERSION		"3.16"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
@@ -86,6 +86,12 @@ enum epd_refresh_mode {
 	EPD_DIRECT_A2	= 12,
 	EPD_AUTO_BG	= 16,
 	EPD_UNBLOCK	= 17,
+	EPD_PART_GL16 = 18,
+	EPD_PART_GLR16 = 19,
+	EPD_PART_GLD16 = 20,
+	EPD_FULL_GL16 = 21,
+	EPD_FULL_GLR16 = 22,
+	EPD_FULL_GLD16 = 23,
 };
 
 #define EBC_OFF      (0)
