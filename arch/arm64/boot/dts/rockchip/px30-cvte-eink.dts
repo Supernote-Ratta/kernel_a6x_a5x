@@ -363,7 +363,7 @@
 		interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
 		pinctrl-names = "default", "pmic-sleep";
 				//"pmic-power-off", "pmic-reset";
-		pinctrl-0 = <&pmic_int>;
+		pinctrl-0 = <&pmic_int>, <&soc_slppin_slp>;
 		pinctrl-1 = <&soc_slppin_slp>, <&rk817_slppin_slp>;
 		//pinctrl-2 = <&soc_slppin_gpio>, <&rk817_slppin_pwrdn>;
 		//pinctrl-3 = <&soc_slppin_rst>, <&rk817_slppin_rst>;
@@ -374,6 +374,7 @@
 		//fb-inner-reg-idxs = <2>;
 		/* 1: rst regs (default in codes), 0: rst the pmic */
 		pmic-reset-func = <1>;
+		pmic-sleep-reverse;
 
 		vcc1-supply = <&vccsys>;
 		vcc2-supply = <&vccsys>;
@@ -1019,6 +1020,18 @@
 
 &rockchip_suspend {
 	status = "okay";
+	rockchip,sleep-mode-config = <
+		(0
+		| RKPM_SLP_ARMOFF
+		| RKPM_SLP_PMU_HW_PLLS_PD
+		| RKPM_SLP_PMU_PMUALIVE_32K
+		| RKPM_SLP_PMU_DIS_OSC
+		| RKPM_SLP_PMIC_LP
+		| RKPM_SLP_PIN_REVERSE
+		)
+	>;
+	rockchip,ultra-sleep-mode-config = <RKPM_SLP_ULTRA>;
+	rockchip,pwm-regulator-config = <RKPM_SLP_LDO2_ON>;
 	rockchip,sleep-debug-en = <1>;
 };
 
