@@ -143,6 +143,7 @@ static int rk805_shutdown_prepare(struct rk808 *rk808)
 static int rk817_shutdown_prepare(struct rk808 *rk808)
 {
 	int ret;
+	uint active_pol;
 
 	/* close rtc int when power off */
 	regmap_update_bits(rk808->regmap,
@@ -162,10 +163,14 @@ static int rk817_shutdown_prepare(struct rk808 *rk808)
 			return 0;
 		}
 
+		/* the default active pol is high */
+		active_pol = rk808->sleep_pin_reverse ?
+				RK817_SLPPOL_L : RK817_SLPPOL_H;
+
 		ret = regmap_update_bits(rk808->regmap,
 					 RK817_SYS_CFG(3),
 					 RK817_SLPPOL_MSK,
-					 RK817_SLPPOL_H);
+					 active_pol);
 		if (ret) {
 			pr_err("shutdown: config RK817_SLPPOL_H error!\n");
 			return 0;
@@ -1087,6 +1092,11 @@ static void rk817_of_property_prepare(struct rk808 *rk808, struct device *dev)
 				   RK817_BUCK3_FB_RES_EXT);
 	dev_info(dev, "support dcdc3 fb mode:%d, %d\n", ret, inner);
 
+	rk808->sleep_pin_reverse =
+		of_property_read_bool(np, "pmic-sleep-reverse");
+	if (rk808->sleep_pin_reverse)
+		dev_info(dev, "sleep pin reverse\n");
+
 	ret = of_property_read_u32(np, "pmic-reset-func", &func);
 
 	msk = RK817_SLPPIN_FUNC_MSK | RK817_RST_FUNC_MSK;
@@ -1422,6 +1432,7 @@ static int rk808_suspend(struct device *dev)
 static int rk808_resume(struct device *dev)
 {
 	int i, ret;
+	uint active_pol;
 	struct rk808 *rk808 = i2c_get_clientdata(rk808_i2c_client);
 
 	for (i = 0; i < resume_reg_num; i++) {
@@ -1446,10 +1457,14 @@ static int rk808_resume(struct device *dev)
 			return -1;
 		}
 
+		/* the default active pol is low */
+		active_pol = rk808->sleep_pin_reverse ?
+				RK817_SLPPOL_H : RK817_SLPPOL_L;
+
 		ret = regmap_update_bits(rk808->regmap,
 					 RK817_SYS_CFG(3),
 					 RK817_SLPPOL_MSK,
-					 RK817_SLPPOL_L);
+					 active_pol);
 		if (ret) {
 			dev_err(dev, "resume: config RK817_SLPPOL_L error!\n");
 			return -1;

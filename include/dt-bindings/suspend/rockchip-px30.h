@@ -26,6 +26,19 @@
 #define RKPM_SLP_ARMOFF			BIT(1)
 #define RKPM_SLP_ARMOFF_DDRPD		BIT(2)
 #define RKPM_SLP_ARMOFF_LOGOFF		BIT(3)
+#define RKPM_SLP_FROM_UBOOT		BIT(4)
+#define RKPM_SLP_ULTRA			BIT(5)
+#define RKPM_SLP_PIN_REVERSE		BIT(6)
+
+#define RKPM_SLP_LDO1_ON		BIT(0)
+#define RKPM_SLP_LDO2_ON		BIT(1)
+#define RKPM_SLP_LDO3_ON		BIT(2)
+#define RKPM_SLP_LDO4_ON		BIT(3)
+#define RKPM_SLP_LDO5_ON		BIT(4)
+#define RKPM_SLP_LDO6_ON		BIT(5)
+#define RKPM_SLP_LDO7_ON		BIT(6)
+#define RKPM_SLP_LDO8_ON		BIT(7)
+#define RKPM_SLP_LDO9_ON		BIT(8)
 
 /* all plls except ddr's pll*/
 #define RKPM_SLP_PMU_HW_PLLS_PD		BIT(8)

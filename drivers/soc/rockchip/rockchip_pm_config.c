@@ -17,8 +17,11 @@
 #include <linux/rockchip/rockchip_sip.h>
 #include <linux/suspend.h>
 #include <dt-bindings/input/input.h>
+#include <linux/pm.h>
 
 #define PM_INVALID_GPIO	0xffff
+
+static u32 pm_suspend_mem, pm_suspend_ultra, pm_suspend_regulator_ultra;
 
 static const struct of_device_id pm_match_table[] = {
 	{ .compatible = "rockchip,pm-px30",},
@@ -47,7 +50,7 @@ static void rockchip_pm_virt_pwroff_prepare(void)
 	sip_smc_virtual_poweroff();
 }
 
-static int __init pm_config_init(struct platform_device *pdev)
+static int __init pm_config_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match_id;
 	struct device_node *node;
@@ -75,10 +78,17 @@ static int __init pm_config_init(struct platform_device *pdev)
 
 	if (of_property_read_u32_array(node,
 				       "rockchip,sleep-mode-config",
-				       &mode_config, 1))
+				       &mode_config, 1)) {
 		dev_warn(&pdev->dev, "not set sleep mode config\n");
-	else
+	} else {		
+		pm_suspend_mem = mode_config;
 		sip_smc_set_suspend_mode(SUSPEND_MODE_CONFIG, mode_config, 0);
+	}
+
+	if (!of_property_read_u32_array(node,
+				       "rockchip,ultra-sleep-mode-config",
+				       &mode_config, 1))
+		pm_suspend_ultra = mode_config;
 
 	if (of_property_read_u32_array(node,
 				       "rockchip,wakeup-config",
@@ -91,10 +101,9 @@ static int __init pm_config_init(struct platform_device *pdev)
 				       "rockchip,pwm-regulator-config",
 				       &pwm_regulator_config, 1))
 		dev_warn(&pdev->dev, "not set pwm-regulator-config\n");
-	else
-		sip_smc_set_suspend_mode(PWM_REGULATOR_CONFIG,
-					 pwm_regulator_config,
-					 0);
+	else {
+		pm_suspend_regulator_ultra = pwm_regulator_config;
+	}
 
 	length = of_gpio_named_count(node, "rockchip,power-ctrl");
 
@@ -136,7 +145,33 @@ static int __init pm_config_init(struct platform_device *pdev)
 	return 0;
 }
 
+extern suspend_state_t get_suspend_state(void);
+
+static int pm_config_suspend(struct platform_device *dev,
+				 pm_message_t state)
+{
+	suspend_state_t suspend_state;
+
+	suspend_state = get_suspend_state();
+	if ((suspend_state == PM_SUSPEND_IDLE) || (pm_suspend_ultra == 0)) {
+		sip_smc_set_suspend_mode(SUSPEND_MODE_CONFIG,
+					 pm_suspend_mem,
+					 0);
+	} else if (suspend_state == PM_SUSPEND_MEM) {
+		sip_smc_set_suspend_mode(SUSPEND_MODE_CONFIG,
+					 pm_suspend_ultra,
+					 0);
+		sip_smc_set_suspend_mode(PWM_REGULATOR_CONFIG,
+					 pm_suspend_regulator_ultra,
+					 0);
+	}
+
+	return 0;
+}
+
 static struct platform_driver pm_driver = {
+	.probe = pm_config_probe,
+	.suspend = pm_config_suspend,
 	.driver = {
 		.name = "rockchip-pm",
 		.of_match_table = pm_match_table,
@@ -145,6 +180,6 @@ static struct platform_driver pm_driver = {
 
 static int __init rockchip_pm_drv_register(void)
 {
-	return platform_driver_probe(&pm_driver, pm_config_init);
+	return platform_driver_register(&pm_driver);
 }
 subsys_initcall(rockchip_pm_drv_register);

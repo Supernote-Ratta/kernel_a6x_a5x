@@ -980,6 +980,7 @@ struct rk808 {
 	struct regmap *regmap;
 	long variant;
 	struct rk808_pin_info *pins;
+	int sleep_pin_reverse;
 };
 
 enum {
