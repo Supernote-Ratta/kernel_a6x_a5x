@@ -153,17 +153,18 @@ static int pm_config_suspend(struct platform_device *dev,
 	suspend_state_t suspend_state;
 
 	suspend_state = get_suspend_state();
-	if ((suspend_state == PM_SUSPEND_IDLE) || (pm_suspend_ultra == 0)) {
-		sip_smc_set_suspend_mode(SUSPEND_MODE_CONFIG,
-					 pm_suspend_mem,
-					 0);
-	} else if (suspend_state == PM_SUSPEND_MEM) {
+	if (suspend_state == PM_SUSPEND_ULTRA && pm_suspend_ultra && pm_suspend_regulator_ultra) {
 		sip_smc_set_suspend_mode(SUSPEND_MODE_CONFIG,
 					 pm_suspend_ultra,
 					 0);
 		sip_smc_set_suspend_mode(PWM_REGULATOR_CONFIG,
 					 pm_suspend_regulator_ultra,
 					 0);
+	}
+	else {
+                sip_smc_set_suspend_mode(SUSPEND_MODE_CONFIG,
+                                         pm_suspend_mem,
+                                         0);
 	}
 
 	return 0;
