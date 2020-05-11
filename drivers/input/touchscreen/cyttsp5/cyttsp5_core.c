@@ -4821,6 +4821,9 @@ static int cyttsp5_core_resume(struct device *dev)
 {
 	struct cyttsp5_core_data *cd = dev_get_drvdata(dev);
 
+	if (get_suspend_state() != PM_SUSPEND_IDLE)
+		cyttsp5_hw_hard_reset(cd);
+
 	//printk("cyttsp5_core_resume cd->irq_enabled=%d\n", cd->irq_enabled);
 
 	//if (IS_DEEP_SLEEP_CONFIGURED(cd->easy_wakeup_gesture))
