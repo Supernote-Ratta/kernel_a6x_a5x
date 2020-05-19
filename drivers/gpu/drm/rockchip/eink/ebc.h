@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"3.18"
+#define RKEBC_DRV_VERSION		"3.19"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
@@ -59,6 +59,8 @@
 #define SET_EBC_AUTO_BG (0x7004)
 #define CLR_EBC_AUTO_BG (0x7005)
 #define SET_EBC_NOT_FULL_NUM (0x7006)
+#define ENABLE_EBC_OVERLAY (0x7007)
+#define DISABLE_EBC_OVERLAY (0x7008)
 
 #define EBC_DRIVER_SN "RK29_EBC_DRIVER_VERSION_1.00"
 #define EBC_DRIVER_SN_LEN sizeof(EBC_DRIVER_SN)
@@ -220,6 +222,11 @@ struct rk29_ebc_info{
 	int is_early_suspend;
 	/*deep sleep*/
 	int is_deep_sleep;
+
+	/* auto bg update */
+	int auto_bg_update;
+	int overlay_enable;
+	int overlay_start;
 };
 
 struct eink {

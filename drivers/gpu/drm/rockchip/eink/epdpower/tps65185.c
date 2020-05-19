@@ -34,6 +34,7 @@
 #include <linux/i2c.h>
 #include <linux/version.h>
 #include <linux/suspend.h>
+#include <linux/soc/rockchip/rk_vendor_storage.h>
 
 #define INVALID_GPIO -1
 
@@ -161,7 +162,7 @@ struct papyrus_sess {
 #define PAPYRUS_MV_TO_VCOMREG(MV)	((MV) / 10)
 
 #define V3P3_EN_MASK	0x20
-#define PAPYRUS_V3P3OFF_DELAY_MS 10//100
+#define PAPYRUS_V3P3OFF_DELAY_MS 20//100
 
 struct papyrus_hw_state {
 	uint8_t tmst_value;
@@ -387,10 +388,10 @@ static int papyrus_hw_arg_init(struct papyrus_sess *sess)
 #if 1
 	sess->vadj = 0x03;
 	
-	sess->upseq0 = SEQ_VNEG(0) | SEQ_VEE(1) | SEQ_VPOS(2) | SEQ_VDD(3);
+	sess->upseq0 = SEQ_VEE(0) | SEQ_VNEG(1) | SEQ_VPOS(2) | SEQ_VDD(3);
 	sess->upseq1 = UDLY_3ms(0) | UDLY_3ms(1) | UDLY_3ms(2) | UDLY_3ms(3);
 	
-	sess->dwnseq0 = SEQ_VDD(0) | SEQ_VPOS(1) | SEQ_VEE(2) | SEQ_VNEG(3);
+	sess->dwnseq0 = SEQ_VDD(0) | SEQ_VPOS(1) | SEQ_VNEG(2) | SEQ_VEE(3);
 	sess->dwnseq1 = DDLY_6ms(0) | DDLY_6ms(1) | DDLY_6ms(2) | DDLY_6ms(3);
 
 	sess->vcom1 = (PAPYRUS_MV_TO_VCOMREG(2500) & 0x00FF);
@@ -839,18 +840,31 @@ static ssize_t vcom_mv_get(struct device *dev, struct device_attribute *attr, ch
 	return sprintf(buf, "%d\n", value);
 }
 
+#define EINK_VCOM_MAX 64
 static ssize_t vcom_mv_set(struct device *dev, struct device_attribute *attr, const char *_buf, size_t _count)
 {
 	int value;
+	int ret;
+	char data[EINK_VCOM_MAX] = {0};
 
 	value = vcom_convertint(_buf);
 	if (value < 0 || value > 5110) {
 		printk("value should be 0~5110\n");
 		return _count;
 	}
-	printk("set vcom to: %dmV\n", value);
+	printk("set chip vcom to: %dmV\n", value);
 
 	tps65185_vcom_set(value);
+
+	memset(data, 0, EINK_VCOM_MAX);
+	memcpy(data, _buf, strlen(_buf) > EINK_VCOM_MAX ? EINK_VCOM_MAX : strlen(_buf));
+	printk("store vcom %s to vendor storage\n", _buf);
+
+	ret = rk_vendor_write(EINK_VCOM_ID, (void *)data, EINK_VCOM_MAX);
+	if (ret < 0) {
+		printk(KERN_ERR "%s failed to write vendor storage\n", __func__);
+		return ret;
+	}
 
 	return _count;
 }
@@ -886,6 +900,7 @@ static int tps65185_probe(struct i2c_client *client, const struct i2c_device_id 
 			dev_err(&client->dev, "create tps65185 sysfs error\n");
 	}
 
+	vcom_check();
 	tps65185_printk("tps65185_probe ok.\n");
 
 	return 0;
@@ -1005,9 +1020,11 @@ int tps65185_vcom_set(int vcom_mv)
 	{
 		stat |= papyrus_hw_getreg(sess, PAPYRUS_ADDR_INT_STATUS1, &rev_val);
 		tps65185_printk("PAPYRUS_ADDR_INT_STATUS1 = 0x%x\n",rev_val);
+		if (stat)
+			break;
 		msleep(50);
 	}
-	
+
 	// VERIFICATION
 	tps65185_printk("sess->vcom1 = 0x%x sess->vcom2 = 0x%x\n",sess->vcom1,sess->vcom2);
 	gpio_direction_output(sess->wake_up_pin, 0);
@@ -1030,6 +1047,36 @@ int tps65185_vcom_set(int vcom_mv)
 	return 0;
 }
 
+static int vcom_vendor_read(void)
+{
+	char *vcom_str = strstr(saved_command_line, "vcom=");
+
+	if (vcom_str)
+		return vcom_convertint(vcom_str+5);
+	else
+		return -1;
+}
+
+int vcom_check(void)
+{
+	int value_chip;
+	int value_vendor;
+
+	//check vcom value
+	value_vendor = vcom_vendor_read();
+	if (value_vendor < 0 || value_vendor > 5110) {
+		printk("invaild vcom value %d from vendor storage\n", value_vendor);
+		return -1;
+	}
+	value_chip = tps65185_vcom_get();
+	if (value_chip != value_vendor) {
+		printk("chip_vcom %d != vendor_vcom %d, set chip_vcom to vendor_vcom\n", value_chip, value_vendor);
+		tps65185_vcom_set(value_vendor);
+	}
+
+	return 0;
+}
+
 static int tps65185_set_vcom_voltage(int vcom_mv)
 {
 	if (vcom_mv < 0 || vcom_mv > 5110) {
@@ -1037,9 +1084,9 @@ static int tps65185_set_vcom_voltage(int vcom_mv)
 		return -1;
 	}
 
-        if(pmic_sess_data.is_inited)
-                pmic_driver_tps65185_i2c.set_vcom_voltage((struct pmic_sess *)&pmic_sess_data, vcom_mv);
-        return 0;
+	if(pmic_sess_data.is_inited)
+		pmic_driver_tps65185_i2c.set_vcom_voltage((struct pmic_sess *)&pmic_sess_data, vcom_mv);
+	return 0;
 }
 
 static int tps65185_power_on(void)
