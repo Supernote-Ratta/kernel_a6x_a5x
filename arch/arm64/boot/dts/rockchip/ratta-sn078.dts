@@ -24,6 +24,7 @@
 		io-channel-names = "buttons";
 		poll-interval = <100>;
 		keyup-threshold-microvolt = <1800000>;
+		status = "disabled";
 
 		esc-key {
 			linux,code = <KEY_ESC>;
@@ -56,6 +57,40 @@
 		};
 	};
 
+	hall_sensor {
+		compatible =  "ratta,hall";
+		pinctrl-names = "default";
+		pinctrl-0 = <&hall_sensor_gpio>;
+		gpios = <&gpio0 RK_PA3 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
+	pwm_leds {
+		compatible = "pwm-leds";
+		status = "disabled";
+
+		blue {
+			label = "blue";
+			pwms = <&pwm0 0 10000000 0>;
+			max-brightness = <255>;
+			linux,default-trigger = "default-on";
+		};
+
+		green {
+			label = "green";
+			pwms = <&pwm1 0 10000000 0>;
+			max-brightness = <255>;
+			linux,default-trigger = "default-on";
+		};
+
+		red {
+			label = "red";
+			pwms = <&pwm2 0 10000000 0>;
+			max-brightness = <255>;
+			linux,default-trigger = "default-on";
+		};
+	};
+
 	rk809-sound {
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
@@ -79,6 +114,7 @@
 
 	rk_headset {
 		compatible = "rockchip_headset";
+		status = "disabled";
 		headset_gpio = <&gpio2 RK_PB0 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&hp_det>;
@@ -110,23 +146,49 @@
 		regulator-max-microvolt = <5000000>;
 	};
 
+	vcc2v2_sys: vccsys_2v2 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc2v2_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <2200000>;
+		regulator-max-microvolt = <2200000>;
+	};
+
+	vcc3v3_lcd: vcc3v3_lcd {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_lcd";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+	};
+
+	wireless-power {
+		compatible = "wireless-power";
+		pinctrl-names = "default";
+		pinctrl-0 = <&uart0_rts_gpio>;
+		power-gpio = <&gpio0 RK_PB5 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
 	wireless-wlan {
 		compatible = "wlan-platdata";
-		wifi_chip_type = "AP6210";
+		wifi_chip_type = "AP6256";
 		WIFI,host_wake_irq = <&gpio0 RK_PB2 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};
 
 	wireless-bluetooth {
 		compatible = "bluetooth-platdata";
-		clocks = <&rk809 1>;
+		clocks = <&rk817 1>;
 		clock-names = "ext_clock";
 		uart_rts_gpios = <&gpio1 RK_PC3 GPIO_ACTIVE_LOW>;
 		pinctrl-names = "default","rts_gpio";
-		pinctrl-0 = <&uart1_rts>;
+		pinctrl-0 = <&uart1_rts &bt_gpios>;
 		pinctrl-1 = <&uart1_rts_gpio>;
-		BT,reset_gpio = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
-		BT,wake_gpio = <&gpio2 RK_PB0 GPIO_ACTIVE_HIGH>;
+		BT,reset_gpio = <&gpio0 RK_PC1 GPIO_ACTIVE_HIGH>;
+		BT,wake_gpio = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
 		BT,wake_host_irq = <&gpio0 RK_PB3 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};
@@ -137,7 +199,7 @@
 	tcon = <&tcon1>;
 
 	/* ED078KH4 */
-	/*panel,width = <1872>;
+	panel,width = <1872>;
 	panel,height = <1404>;
 	panel,vir_width = <1872>;
 	panel,vir_height = <1404>;
@@ -153,10 +215,10 @@
 	panel,fbl = <4>;
 	panel,fdl = <1404>;
 	panel,fel = <12>;
-	panel,vcom-mv = <1560>;*/
+	panel,vcom-mv = <1560>;
 
 	/* ES103TC1 */
-	panel,width = <1872>;
+	/*panel,width = <1872>;
 	panel,height = <1404>;
 	panel,vir_width = <1872>;
 	panel,vir_height = <1404>;
@@ -172,7 +234,7 @@
 	panel,fbl = <4>;
 	panel,fdl = <1404>;
 	panel,fel = <12>;
-	panel,vcom-mv = <1560>;
+	panel,vcom-mv = <1560>;*/
 
 	/* ED097TC2U1 */
 	/*panel,width = <1200>;
@@ -284,6 +346,10 @@
 	cpu-supply = <&vdd_arm>;
 };
 
+&debug_uart {
+		rockchip,baudrate = <115200>;  /* Only 115200 and 1500000 */
+};
+
 &dfi {
 	status = "okay";
 };
@@ -312,8 +378,8 @@
 &i2c0 {
 	status = "okay";
 
-	rk809: pmic@20 {
-		compatible = "rockchip,rk809";
+	rk817: pmic@20 {
+		compatible = "rockchip,rk817";
 		reg = <0x20>;
 		interrupt-parent = <&gpio0>;
 		interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
@@ -335,10 +401,10 @@
 		vcc2-supply = <&vcc5v0_sys>;
 		vcc3-supply = <&vcc5v0_sys>;
 		vcc4-supply = <&vcc5v0_sys>;
-		vcc5-supply = <&vcc3v3_sys>;
-		vcc6-supply = <&vcc3v3_sys>;
-		vcc7-supply = <&vcc3v3_sys>;
-		vcc8-supply = <&vcc3v3_sys>;
+		vcc5-supply = <&vcc2v2_sys>;
+		vcc6-supply = <&vcc5v0_sys>;
+		vcc7-supply = <&vcc_3v0>;
+		vcc8-supply = <&vcc5v0_sys>;
 		vcc9-supply = <&vcc5v0_sys>;
 
 		pwrkey {
@@ -419,6 +485,18 @@
 				regulator-state-mem {
 					regulator-on-in-suspend;
 					regulator-suspend-microvolt = <3000000>;
+				};
+			};
+
+			vcc3v3_sys: DCDC_REG5 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vcc3v3_sys";
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <3300000>;
 				};
 			};
 
@@ -538,26 +616,48 @@
 				};
 			};
 
-			vcc3v3_sys: DCDC_REG5 {
-				regulator-always-on;
-				regulator-boot-on;
-				regulator-min-microvolt = <3300000>;
-				regulator-max-microvolt = <3300000>;
-				regulator-name = "vcc3v3_sys";
-				regulator-state-mem {
-					regulator-on-in-suspend;
-					regulator-suspend-microvolt = <3300000>;
-				};
-			};
-
 			vcc5v0_host: SWITCH_REG1 {
 				regulator-name = "vcc5v0_host";
 			};
 
-			vcc3v3_lcd: SWITCH_REG2 {
+			SWITCH_REG2 {
 				regulator-boot-on;
 				regulator-name = "vcc3v3_lcd";
 			};
+		};
+
+		battery {
+			compatible = "rk817,battery";
+			ocv_table = <3500 3548 3592 3636 3687 3740 3780
+				3806 3827 3846 3864 3889 3929 3964
+				3993 4015 4030 4041 4056 4076 4148>;
+			design_capacity = <4000>;
+			design_qmax = <4300>;
+			bat_res = <100>;
+			sleep_enter_current = <150>;
+			sleep_exit_current = <180>;
+			sleep_filter_current = <100>;
+			power_off_thresd = <3500>;
+			zero_algorithm_vol = <3950>;
+			max_soc_offset = <60>;
+			monitor_sec = <5>;
+			sample_res = <10>;
+			bat_res_up = <140>;
+			bat_res_down = <20>;
+			virtual_power = <0>;
+		};
+
+		charger {
+			compatible = "rk817,charger";
+			min_input_voltage = <4500>;
+			max_input_current = <1500>;
+			max_chrg_current = <2000>;
+			max_chrg_voltage = <4200>;
+			chrg_term_mode = <0>;
+			chrg_finish_cur = <300>;
+			virtual_power = <0>;
+			dc_det_adc = <0>;
+			extcon = <&u2phy>;
 		};
 
 		rk809_codec: codec {
@@ -577,19 +677,20 @@
 &i2c1 {
 	status = "okay";
 
-	tps65185@68 {
+	atmel-touch@4b {
+		compatible = "atmel,maxtouch";
+		reg = <0x4b>;
 		status = "okay";
-		compatible = "ti,tps65185";
-		reg = <0x68>;
+		interrupt-parent = <&gpio0>;
+		interrupts = <RK_PA5 IRQ_TYPE_EDGE_FALLING>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&tps65185_gpio>;
-		wakeup_pin = <&gpio2 RK_PA2 GPIO_ACTIVE_HIGH>;
-		vcomctl_pin = <&gpio2 RK_PA1 GPIO_ACTIVE_HIGH>;
-		powerup_pin = <&gpio2 RK_PA4 GPIO_ACTIVE_HIGH>;
+		pinctrl-0 = <&touch_panel_gpio>;
+		atmel,power-gpio =<&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+		atmel,reset-gpio = <&gpio0 RK_PB4 GPIO_ACTIVE_HIGH>;
 	};
 
 	gt1x: gt1x@14 {
-		status = "okay";
+		status = "disabled";
 		compatible = "goodix,gt1x";
 		reg = <0x14>;
 		power-supply = <&vcc3v3_lcd>;
@@ -598,7 +699,7 @@
 	};
 
 	sensor@4c {
-		status = "okay";
+		status = "disabled";
 		compatible = "gs_mma7660";
 		reg = <0x4c>;
 		type = <SENSOR_TYPE_ACCEL>;
@@ -610,6 +711,38 @@
 	};
 };
 
+&i2c2 {
+	status = "okay";
+
+	tps65185@68 {
+		status = "okay";
+		compatible = "ti,tps65185";
+		reg = <0x68>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&tps65185_gpio>;
+		wakeup_pin = <&gpio2 RK_PA2 GPIO_ACTIVE_HIGH>;
+		vcomctl_pin = <&gpio2 RK_PA1 GPIO_ACTIVE_HIGH>;
+		powerup_pin = <&gpio2 RK_PA4 GPIO_ACTIVE_HIGH>;
+		poweren_pin = <&gpio2 RK_PA5 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&i2c3 {
+	status = "okay";
+
+	wacom-emr@09 {
+		compatible = "wacom,w9013";
+		reg = <0x09>;
+		status = "okay";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wacom_emr_gpio>;
+		gpio_intr = <&gpio1 RK_PD5 GPIO_ACTIVE_HIGH>;
+		gpio_detect = <&gpio1 RK_PD6 GPIO_ACTIVE_HIGH>;
+		gpio_rst = <&gpio2 RK_PB2 GPIO_ACTIVE_HIGH>;
+		gpio_pwren = <&gpio2 RK_PB1 GPIO_ACTIVE_HIGH>;
+	};
+};
+
 &i2s1_2ch {
 	status = "okay";
 	#sound-dai-cells = <0>;
@@ -618,11 +751,11 @@
 &io_domains {
 	status = "okay";
 
-	vccio1-supply = <&vcc1v8_soc>;
-	vccio2-supply = <&vccio_sd>;
+	vccio1-supply = <&vcc1v8_dvp>;
+	vccio2-supply = <&vcc1v8_dvp>;
 	vccio3-supply = <&vcc_3v0>;
-	vccio4-supply = <&vcc3v0_pmu>;
-	vccio5-supply = <&vcc_3v0>;
+	vccio4-supply = <&vcc2v8_dvp>;
+	vccio5-supply = <&vcc1v8_dvp>;
 };
 
 &isp_mmu {
@@ -645,13 +778,50 @@
 	};
 
 	tps_pmic {
-                tps65185_gpio: tps65185-gpio {
-                        rockchip,pins =
+		tps65185_gpio: tps65185-gpio {
+			rockchip,pins =
+				/* E_PMIC_INT */
+				<2 RK_PA0 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* E_PMIC_VCOM_CTL */
 				<2 RK_PA1 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* E_PMIC_WAKEUP */
 				<2 RK_PA2 RK_FUNC_GPIO &pcfg_pull_up>,
-                                <2 RK_PA4 RK_FUNC_GPIO &pcfg_pull_up>;
+				/* E_PMIC_PG */
+				<2 RK_PA3 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* E_PMIC_ON/PWRUP */
+				<2 RK_PA4 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* E_PWR_EN */
+				<2 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
 
-                };
+	input-dev {
+		wacom_emr_gpio: wacom-emr-gpio {
+			rockchip,pins =
+				/* EMR_INT */
+				<2 RK_PB2 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* EMR_RST */
+				<1 RK_PD5 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* EMR_PDCTB */
+				<1 RK_PD6 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* EMR_PWR_EN */
+				<2 RK_PB1 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		touch_panel_gpio: touch-panel-gpio {
+			rockchip,pins =
+				/* TP_INT */
+				<0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* TP_RST */
+				<0 RK_PB4 RK_FUNC_GPIO &pcfg_pull_down>,
+				/* TP_PWR_EN */
+				<0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+
+		hall_sensor_gpio: hall-sensor-gpio {
+			rockchip,pins =
+				<0 RK_PA3 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
 	};
 
 	pmic {
@@ -681,6 +851,19 @@
 			rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
+
+	wireless {
+		bt_gpios: bt-gpios {
+			/* reset gpio */
+			rockchip,pins =
+				/* reset gpio */
+				<0 RK_PC1 RK_FUNC_GPIO &pcfg_pull_down>,
+				/* wake bt gpio */
+				<0 RK_PA1 RK_FUNC_GPIO &pcfg_pull_down>,
+				/* wake host gpio */
+				<0 RK_PB3 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
 };
 
 &pmu_io_domains {
@@ -688,6 +871,18 @@
 
 	pmuio1-supply = <&vcc3v0_pmu>;
 	pmuio2-supply = <&vcc3v0_pmu>;
+};
+
+&pwm0 {
+	status = "disabled";
+};
+
+&pwm1 {
+	status = "disabled";
+};
+
+&pwm2 {
+	status = "disabled";
 };
 
 &rk_rga {
@@ -718,7 +913,7 @@
 	sd-uhs-sdr104;
 	vqmmc-supply = <&vccio_sd>;
 	vmmc-supply = <&vcc_sd>;
-	status = "okay";
+	status = "disabled";
 };
 
 &sdio {
