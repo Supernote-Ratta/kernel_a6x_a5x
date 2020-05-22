@@ -517,6 +517,7 @@ dhd_conf_set_fw_name_by_chip(dhd_pub_t *dhd, char *fw_path, char *nv_path)
 				strcpy(&nv_path[j + 1], "nvram_ap6255.txt");
 			} else if (chiprev == BCM43456C5_CHIP_REV) {
 				strcpy(&fw_path[i+1], FW_BCM43456C5);
+				strcpy(&nv_path[j + 1], "nvram_ap6256.txt");
 			}
 			break;
 		case BCM4354_CHIP_ID:
