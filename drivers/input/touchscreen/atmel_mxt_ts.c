@@ -28,6 +28,8 @@
 #include <linux/of.h>
 #include <linux/slab.h>
 #include <asm/unaligned.h>
+#include <linux/of_gpio.h>
+#include <linux/suspend.h>
 
 /* Firmware files */
 #define MXT_FW_NAME		"maxtouch.fw"
@@ -844,8 +846,9 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 			id, type, x, y, major, pressure, orientation);
 
 		input_mt_report_slot_state(input_dev, tool, 1);
-		input_report_abs(input_dev, ABS_MT_POSITION_X, x);
-		input_report_abs(input_dev, ABS_MT_POSITION_Y, y);
+		input_report_abs(input_dev, ABS_MT_POSITION_X, y);
+		input_report_abs(input_dev, ABS_MT_POSITION_Y,
+				 data->max_x - x - 1);
 		input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, major);
 		input_report_abs(input_dev, ABS_MT_PRESSURE, pressure);
 		input_report_abs(input_dev, ABS_MT_DISTANCE, distance);
@@ -1844,8 +1847,8 @@ static int mxt_initialize_input_device(struct mxt_data *data)
 	input_set_capability(input_dev, EV_KEY, BTN_TOUCH);
 
 	/* For single touch */
-	input_set_abs_params(input_dev, ABS_X, 0, data->max_x, 0, 0);
-	input_set_abs_params(input_dev, ABS_Y, 0, data->max_y, 0, 0);
+	input_set_abs_params(input_dev, ABS_X, 0, data->max_y, 0, 0);
+	input_set_abs_params(input_dev, ABS_Y, 0, data->max_x, 0, 0);
 
 	if (data->multitouch == MXT_TOUCH_MULTI_T9 ||
 	    (data->multitouch == MXT_TOUCH_MULTITOUCHSCREEN_T100 &&
@@ -1878,9 +1881,9 @@ static int mxt_initialize_input_device(struct mxt_data *data)
 	}
 
 	input_set_abs_params(input_dev, ABS_MT_POSITION_X,
-			     0, data->max_x, 0, 0);
-	input_set_abs_params(input_dev, ABS_MT_POSITION_Y,
 			     0, data->max_y, 0, 0);
+	input_set_abs_params(input_dev, ABS_MT_POSITION_Y,
+			     0, data->max_x, 0, 0);
 
 	if (data->multitouch == MXT_TOUCH_MULTI_T9 ||
 	    (data->multitouch == MXT_TOUCH_MULTITOUCHSCREEN_T100 &&
@@ -2448,6 +2451,37 @@ static const struct mxt_platform_data *mxt_parse_dt(struct i2c_client *client)
 
 	pdata->suspend_mode = MXT_SUSPEND_DEEP_SLEEP;
 
+	pdata->gpio_power = of_get_named_gpio(np, "atmel,power-gpio", 0);
+	if (!gpio_is_valid(pdata->gpio_power)) {
+		dev_err(&client->dev, "no gpio_power pin available\n");
+	} else {
+		ret = devm_gpio_request_one(&client->dev, pdata->gpio_power,
+					    GPIOF_OUT_INIT_HIGH, "gpio-power");
+		if (ret < 0)
+			dev_err(&client->dev,
+				"request gpio_power failed,%d\n", ret);
+		else
+			msleep(100);
+	}
+
+	pdata->gpio_reset = of_get_named_gpio(np, "atmel,reset-gpio", 0);
+	if (!gpio_is_valid(pdata->gpio_reset)) {
+		dev_err(&client->dev, "no gpio_reset pin available\n");
+	} else {
+		ret = devm_gpio_request_one(&client->dev, pdata->gpio_reset,
+					    GPIOF_OUT_INIT_HIGH, "gpio-reset");
+		if (ret < 0) {
+			dev_err(&client->dev,
+				"request gpio_reset failed,%d\n", ret);
+		} else {
+			msleep(150);
+			gpio_direction_output(pdata->gpio_reset, 0);
+			msleep(100);
+			gpio_direction_output(pdata->gpio_reset, 1);
+			msleep(100);
+		}
+	}
+
 	return pdata;
 }
 #else
@@ -2695,6 +2729,14 @@ static int __maybe_unused mxt_suspend(struct device *dev)
 
 	mutex_lock(&input_dev->mutex);
 
+	if ((get_suspend_state() == PM_SUSPEND_IDLE) &&
+	    !irqd_is_wakeup_set(irq_get_irq_data(client->irq))) {
+		enable_irq_wake(client->irq);
+		mutex_unlock(&input_dev->mutex);
+		dev_info(&client->dev, "enable irq wake\n");
+		return 0;
+	}
+
 	if (input_dev->users)
 		mxt_stop(data);
 
@@ -2714,6 +2756,13 @@ static int __maybe_unused mxt_resume(struct device *dev)
 
 	mutex_lock(&input_dev->mutex);
 
+	if (irqd_is_wakeup_set(irq_get_irq_data(client->irq))) {
+		disable_irq_wake(client->irq);
+		mutex_unlock(&input_dev->mutex);
+		dev_info(&client->dev, "disable irq wake\n");
+		return 0;
+	}
+
 	if (input_dev->users)
 		mxt_start(data);
 
@@ -2721,7 +2770,6 @@ static int __maybe_unused mxt_resume(struct device *dev)
 
 	return 0;
 }
-
 static SIMPLE_DEV_PM_OPS(mxt_pm_ops, mxt_suspend, mxt_resume);
 
 static const struct of_device_id mxt_of_match[] = {
