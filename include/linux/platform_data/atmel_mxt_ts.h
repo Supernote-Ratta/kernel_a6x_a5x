@@ -24,6 +24,7 @@ enum mxt_suspend_mode {
 struct mxt_platform_data {
 	unsigned long irqflags;
 	u8 t19_num_keys;
+	int gpio_power, gpio_reset;
 	const unsigned int *t19_keymap;
 	enum mxt_suspend_mode suspend_mode;
 };
