@@ -164,18 +164,13 @@
 		regulator-max-microvolt = <3300000>;
 	};
 
-	wireless-power {
-		compatible = "wireless-power";
-		pinctrl-names = "default";
-		pinctrl-0 = <&uart0_rts_gpio>;
-		power-gpio = <&gpio0 RK_PB5 GPIO_ACTIVE_HIGH>;
-		status = "okay";
-	};
-
 	wireless-wlan {
 		compatible = "wlan-platdata";
+		pinctrl-names = "default";
+		pinctrl-0 = <&uart0_rts_gpio>;
 		wifi_chip_type = "AP6256";
 		WIFI,host_wake_irq = <&gpio0 RK_PB2 GPIO_ACTIVE_HIGH>;
+		WIFI,vbat_gpio = <&gpio0 RK_PB5 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};
 
