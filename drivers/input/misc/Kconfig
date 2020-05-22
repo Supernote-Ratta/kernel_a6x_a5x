@@ -106,7 +106,8 @@ config INPUT_E3X0_BUTTON
 config INPUT_HALL_SENSOR
 	bool "Hall sensor driver"
 	default y
-	  This enable hall driver
+	help
+	  This enable hall driver.
 
 config INPUT_PCSPKR
 	tristate "PC Speaker support"
