@@ -113,7 +113,9 @@ struct papyrus_sess {
 	int pwr_up_pin;
 	int wake_up_pin;
 	int vcom_ctl_pin;
+	int pwr_en_pin;
 	/* True if a high WAKEUP brings Papyrus out of reset. */
+	int poweren_active_high;
 	int poweron_active_high;
 	int wakeup_active_high;
 	int vcomctl_active_high;
@@ -417,14 +419,25 @@ static int papyrus_hw_init(struct papyrus_sess *sess, const char *chip_id)
 		stat |= gpio_request(sess->wake_up_pin, "papyrus-wake_up");
 	if((sess->vcom_ctl_pin!= INVALID_GPIO))
 		stat |= gpio_request(sess->vcom_ctl_pin, "papyrus-vcom-ctl");
+	if((sess->pwr_en_pin!= INVALID_GPIO))
+		stat |= gpio_request(sess->pwr_en_pin, "papyrus-power-en");
 	if (stat) {
 		pr_err("papyrus: cannot reserve GPIOs\n");
 		stat = -ENODEV;
 		return stat;
 	}
+	gpio_export(sess->pwr_en_pin, false);
+	sess->poweren_active_high = 1;
 	sess->poweron_active_high = 1;
 	sess->wakeup_active_high = 1;
 	sess->vcomctl_active_high = 1;
+
+	if (sess->pwr_en_pin != INVALID_GPIO) {
+		gpio_direction_output(sess->pwr_en_pin,
+				      sess->poweren_active_high);
+		msleep(PAPYRUS_EEPROM_DELAY_MS);
+	}
+
 	if((sess->wake_up_pin != INVALID_GPIO)){
 		gpio_direction_output(sess->wake_up_pin, !sess->wakeup_active_high);
 		/* wait to reset papyrus */
@@ -732,6 +745,12 @@ static int papyrus_probe(struct pmic_sess *pmsess,struct i2c_client *client)
 	if (!gpio_is_valid(sess->pwr_up_pin)) {
 		sess->pwr_up_pin = INVALID_GPIO;
 		pr_err("tsp65185: failed to find pwr_up pin\n");
+	}
+
+	sess->pwr_en_pin = of_get_named_gpio_flags(node, "poweren_pin", 0, &flags);
+	if (!gpio_is_valid(sess->pwr_en_pin)) {
+		sess->pwr_en_pin = INVALID_GPIO;
+		pr_err("tsp65185: failed to find pwr_en pin\n");
 	}
 
 	stat = papyrus_hw_init(sess, pmsess->drv->id);
