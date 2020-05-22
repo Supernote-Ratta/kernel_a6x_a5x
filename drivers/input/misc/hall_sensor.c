@@ -19,20 +19,15 @@
 #include <linux/delay.h>
 #include <linux/of_gpio.h>
 #include <linux/gpio.h>
-#include <linux/eink_bl.h>
 
 #define DEVICE_NAME		"hall_sensor"
 #define CONVERSION_TIME_MS	50
 
 struct hall_sensor  {
 	struct input_dev *input;
-	struct notifier_block eink_nb;
 	int irq;
 	int gpio;
 };
-
-static int eink_bl_callback(struct notifier_block *nb, unsigned long action,
-			    void *data);
 
 static irqreturn_t hall_sensor_irq(int irq, void *dev_id)
 {
@@ -99,14 +94,6 @@ static int hall_sensor_probe(struct platform_device *pdev)
 		goto err_register_input;
 	}
 
-	hall->eink_nb.notifier_call = eink_bl_callback;
-	ret = eink_bl_register_notifier(&hall->eink_nb);
-	if (ret) {
-		dev_err(&pdev->dev,
-			"Failed to register eink bl callback,%d\n", ret);
-		goto err_eink;
-	}
-
 	/*
 	 * Request the interrupt on a falling trigger
 	 * and only one trigger per falling edge
@@ -126,8 +113,6 @@ static int hall_sensor_probe(struct platform_device *pdev)
 	return 0;
 
 err_request_irq:
-	eink_bl_unregister_notifier(&hall->eink_nb);
-err_eink:
 	input_unregister_device(hall->input);
 err_register_input:
 	device_init_wakeup(&pdev->dev, false);
@@ -148,43 +133,6 @@ static int hall_sensor_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int eink_bl_callback(struct notifier_block *nb, unsigned long action,
-			    void *data)
-{
-	struct hall_sensor *hs = container_of(nb, typeof(*hs), eink_nb);
-	struct device *dev = hs->input->dev.parent;
-
-	switch (action) {
-	case EINK_BL_ON_SUSPEND:
-		if (irqd_is_wakeup_set(irq_get_irq_data(hs->irq))) {
-			disable_irq_wake(hs->irq);
-			dev_info(dev, "disable irq wake(blon suspend).\n");
-		}
-		break;
-	case EINK_BL_ON_RESUME:
-		if (irqd_is_wakeup_set(irq_get_irq_data(hs->irq))) {
-			disable_irq_wake(hs->irq);
-			dev_info(dev, "disable irq wake(blon resume).\n");
-		}
-	case EINK_BL_OFF_SUSPEND:
-		if (!irqd_is_wakeup_set(irq_get_irq_data(hs->irq))) {
-			enable_irq_wake(hs->irq);
-			dev_info(dev, "enable irq wake(bloff suspend).\n");
-		}
-		break;
-	case EINK_BL_OFF_RESUME:
-		if (irqd_is_wakeup_set(irq_get_irq_data(hs->irq))) {
-			disable_irq_wake(hs->irq);
-			dev_info(dev, "disable irq wake(bloff resume).\n");
-		}
-		break;
-	default:
-		break;
-	}
-
-	return 0;
-}
-
 static const struct of_device_id hall_dt_ids[] = {
 	{
 		.compatible = "ratta,hall",
@@ -194,12 +142,36 @@ static const struct of_device_id hall_dt_ids[] = {
 };
 MODULE_DEVICE_TABLE(of, hall_dt_ids);
 
+static int __maybe_unused hall_sensor_suspend(struct device *dev)
+{
+	struct hall_sensor *hall = dev_get_drvdata(dev);
+
+	if (device_may_wakeup(dev))
+		enable_irq_wake(hall->irq);
+
+	return 0;
+}
+
+static int __maybe_unused hall_sensor_resume(struct device *dev)
+{
+	struct hall_sensor *hall = dev_get_drvdata(dev);
+
+	if (device_may_wakeup(dev))
+		disable_irq_wake(hall->irq);
+
+	return 0;
+}
+
+static SIMPLE_DEV_PM_OPS(hall_sensor_pm,
+			 hall_sensor_suspend, hall_sensor_resume);
+
 static struct platform_driver hall_sensor_driver = {
 	.probe	= hall_sensor_probe,
 	.remove	= hall_sensor_remove,
 	.driver = {
 		.name	= "hall_sensor",
 		.owner	= THIS_MODULE,
+		.pm	= &hall_sensor_pm,
 		.of_match_table = hall_dt_ids,
 	},
 };
