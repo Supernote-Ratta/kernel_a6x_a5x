@@ -24,7 +24,7 @@
 		io-channel-names = "buttons";
 		poll-interval = <100>;
 		keyup-threshold-microvolt = <1800000>;
-		status = "disabled";
+		status = "okay";
 
 		esc-key {
 			linux,code = <KEY_ESC>;
@@ -38,11 +38,13 @@
 			press-threshold-microvolt = <624000>;
 		};
 
+/*
 		menu-key {
 			linux,code = <KEY_MENU>;
 			label = "menu";
 			press-threshold-microvolt = <987000>;
 		};
+*/
 
 		vol-down-key {
 			linux,code = <KEY_VOLUMEDOWN>;
