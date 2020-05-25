@@ -552,7 +552,7 @@ static struct cyttsp5_core_platform_data *create_and_get_core_pdata(
 	u32 value;
 	int rc;
 	int i;
-	int reset_gpio, irq_gpio = -1;
+	int reset_gpio, irq_gpio = -1, pwr_gpio;
 
 	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
 	if (!pdata) {
@@ -573,6 +573,11 @@ static struct cyttsp5_core_platform_data *create_and_get_core_pdata(
 	reset_gpio = of_get_named_gpio(core_node, "cy,rst_gpio", 0);
 	if (gpio_is_valid(reset_gpio)) {
 		pdata->rst_gpio = reset_gpio;
+	}
+
+	pwr_gpio = of_get_named_gpio(core_node, "cy,pwr_gpio", 0);
+	if (gpio_is_valid(pwr_gpio)) {
+		pdata->pwr_gpio = pwr_gpio;
 	}
 
 	rc = of_property_read_u32(core_node, "cy,hid_desc_register", &value);

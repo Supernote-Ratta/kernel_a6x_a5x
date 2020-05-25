@@ -6062,6 +6062,7 @@ int cyttsp5_probe(const struct cyttsp5_bus_ops *ops, struct device *dev,
 	 */
 	cyttsp5_bus_ops_save = ops;
 
+#if 0 
 	/* Call platform init function */
 	if (cd->cpdata->init) {
 		parade_debug(cd->dev, DEBUG_LEVEL_1, "%s: Init HW\n", __func__);
@@ -6072,7 +6073,7 @@ int cyttsp5_probe(const struct cyttsp5_bus_ops *ops, struct device *dev,
 	}
 	if (rc < 0)
 		dev_err(cd->dev, "%s: HW Init fail r=%d\n", __func__, rc);
-
+#endif
 	/* Call platform detect function */
 	if (cd->cpdata->detect) {
 		dev_info(cd->dev, "%s: Detect HW\n", __func__);

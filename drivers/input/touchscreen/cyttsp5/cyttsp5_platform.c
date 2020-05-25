@@ -190,60 +190,58 @@ int cyttsp5_init(struct cyttsp5_core_platform_data *pdata,
 {
 	int rst_gpio = pdata->rst_gpio;
 	int irq_gpio = pdata->irq_gpio;
+	int pwr_gpio = pdata->pwr_gpio;
 	int rc = 0;
 
 	if (on) {
-		rc = gpio_request(rst_gpio, NULL);
+		rc = gpio_request_one(pwr_gpio,GPIOF_INIT_HIGH,"tp_gpio_pwr");
 		if (rc < 0) {
+			dev_err(dev, "%s: Fail request gpio=%d\n", __func__, pwr_gpio);
+		}
+
+		rc = gpio_request_one(rst_gpio,GPIOF_INIT_HIGH,"tp_gpio_rst");
+		if (rc < 0) {
+			dev_err(dev, "%s: Fail request gpio=%d\n", __func__, pwr_gpio);
+			gpio_free(pwr_gpio);
+			return -1;
+		}
+
+		rc = gpio_request_one(irq_gpio,GPIOF_DIR_IN,"tp_irq");
+		if (rc < 0) {
+			dev_err(dev, "%s: Fail request gpio=%d\n", __func__, pwr_gpio);
 			gpio_free(rst_gpio);
-			rc = gpio_request(rst_gpio, NULL);
+			gpio_free(pwr_gpio);
+			return -1;
 		}
-		if (rc < 0) {
-			dev_err(dev,
-				"%s: Fail request gpio=%d\n", __func__,
-				rst_gpio);
-		} else {
-			rc = gpio_direction_output(rst_gpio, 1);
-			if (rc < 0) {
-				pr_err("%s: Fail set output gpio=%d\n",
-					__func__, rst_gpio);
-				gpio_free(rst_gpio);
-			} else {
-				rc = gpio_request(irq_gpio, NULL);
-				if (rc < 0) {
-					gpio_free(irq_gpio);
-					rc = gpio_request(irq_gpio,
-						NULL);
-				}
-				if (rc < 0) {
-					dev_err(dev,
-						"%s: Fail request gpio=%d\n",
-						__func__, irq_gpio);
-					gpio_free(rst_gpio);
-				} else {
-					gpio_direction_input(irq_gpio);
-				}
-			}
-		}
+
 	} else {
 		gpio_free(rst_gpio);
+		gpio_free(pwr_gpio);
 		gpio_free(irq_gpio);
 	}
 
-	dev_info(dev, "%s: INIT CYTTSP RST gpio=%d and IRQ gpio=%d r=%d\n",
-		__func__, rst_gpio, irq_gpio, rc);
+	dev_info(dev, "%s: INIT CYTTSP PWR gpio=%d RST gpio=%d and IRQ gpio=%d r=%d\n",
+		__func__, pwr_gpio, rst_gpio, irq_gpio, rc);
 	return rc;
 }
 
 static int cyttsp5_wakeup(struct cyttsp5_core_platform_data *pdata,
 		struct device *dev, atomic_t *ignore_irq)
 {
+	int pwr_gpio = pdata->pwr_gpio;
+	gpio_set_value(pwr_gpio, 1);
+	msleep(20);
+	dev_info(dev, "%s: pwr_gpio CYTTSP gpio=%d\n", __func__, pdata->pwr_gpio);
 	return 0;
 }
 
 static int cyttsp5_sleep(struct cyttsp5_core_platform_data *pdata,
 		struct device *dev, atomic_t *ignore_irq)
 {
+	int pwr_gpio = pdata->pwr_gpio;
+	gpio_set_value(pwr_gpio, 0);
+	msleep(20);
+	dev_info(dev, "%s: pwr_gpio CYTTSP gpio=%d\n", __func__, pdata->pwr_gpio);
 	return 0;
 }
 

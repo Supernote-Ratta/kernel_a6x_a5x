@@ -136,6 +136,7 @@ static int cyttsp5_i2c_probe(struct i2c_client *client,
 #ifdef CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP5_DEVICETREE_SUPPORT
 	const struct of_device_id *match;
 #endif
+	struct cyttsp5_platform_data *pdata;
 	int rc;
 	char buf[32];
 
@@ -145,13 +146,6 @@ static int cyttsp5_i2c_probe(struct i2c_client *client,
 		return -EIO;
 	}
 
-	rc = cyttsp5_i2c_read_default(&client->dev, buf, 16);
-	if(rc < 0)
-	{
-		printk("*****cyttsp5_i2c_probe cyttsp5_i2c_read_default rc=%d \n", rc);
-		return -ENODEV;			
-	}
-	
 #ifdef CONFIG_TOUCHSCREEN_CYPRESS_CYTTSP5_DEVICETREE_SUPPORT
 	match = of_match_device(of_match_ptr(cyttsp5_i2c_of_match), dev);
 	if (match) {
@@ -160,6 +154,31 @@ static int cyttsp5_i2c_probe(struct i2c_client *client,
 			return rc;
 	}
 #endif
+	pdata=dev_get_platdata(dev);
+	if(pdata->core_pdata->init)
+		 pdata->core_pdata->init(pdata->core_pdata, 1, NULL);
+
+	if(pdata->core_pdata->power) {
+		rc = pdata->core_pdata->power(pdata->core_pdata,1,dev,NULL);
+		if (rc <0)
+			return rc;
+	}
+
+	rc = cyttsp5_i2c_read_default(&client->dev, buf, 16);
+	if(rc < 0)
+	{
+		printk("*****cyttsp5_i2c_probe cyttsp5_i2c_read_default rc=%d \n", rc);
+		return -ENODEV;
+	}
+
+	rc = cyttsp5_i2c_read_default(&client->dev, buf, 16);
+	if(rc < 0)
+	{
+		printk("*****cyttsp5_i2c_probe cyttsp5_i2c_read_default rc=%d \n", rc);
+		if(pdata->core_pdata->init)
+			 pdata->core_pdata->init(pdata->core_pdata, 0, NULL);
+		return -ENODEV;	
+	}
 
 	rc = cyttsp5_probe(&cyttsp5_i2c_bus_ops, &client->dev, client->irq,
 			  CY_I2C_DATA_SIZE);
