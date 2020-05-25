@@ -768,6 +768,7 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 	u8 major = 0;
 	u8 pressure = 0;
 	u8 orientation = 0;
+	int temp_x;
 
 	id = message[0] - data->T100_reportid_min - 2;
 
@@ -847,8 +848,11 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 
 		input_mt_report_slot_state(input_dev, tool, 1);
 		input_report_abs(input_dev, ABS_MT_POSITION_X, y);
-		input_report_abs(input_dev, ABS_MT_POSITION_Y,
-				 data->max_x - x - 1);
+
+		temp_x = data->max_x - x - 1;
+		if( temp_x < 0 )
+			temp_x = 0;
+		input_report_abs(input_dev, ABS_MT_POSITION_Y, temp_x);
 		input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, major);
 		input_report_abs(input_dev, ABS_MT_PRESSURE, pressure);
 		input_report_abs(input_dev, ABS_MT_DISTANCE, distance);
@@ -1753,6 +1757,8 @@ static int mxt_read_t100_config(struct mxt_data *data)
 		data->max_x = range_x;
 		data->max_y = range_y;
 	}
+
+	data->max_x = 1403;
 
 	/* allocate aux bytes */
 	aux = 6;
