@@ -438,7 +438,7 @@ err_free_mem:
 	kfree(wac_i2c);
 err_free_pwren_gpio:
 	devm_gpio_free(&client->dev, pwren_gpio);
-err_free_reset_gpio:
+//err_free_reset_gpio:
 	devm_gpio_free(&client->dev, reset_gpio);
 
 	return error;
