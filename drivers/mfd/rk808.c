@@ -1474,6 +1474,13 @@ static int rk808_resume(struct device *dev)
 		if (ret)
 			dev_dbg(dev, "failed to act reset pinctrl state\n");
 	}
+	else {
+		dev_info(dev, "resume: config SLPPIN_NULL_FUN!\n");
+		ret = regmap_update_bits(rk808->regmap,
+					 RK817_SYS_CFG(3),
+					 RK817_SLPPIN_FUNC_MSK,
+					 SLPPIN_NULL_FUN);
+	}
 
 	return 0;
 }
