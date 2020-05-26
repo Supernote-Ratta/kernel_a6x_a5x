@@ -1067,5 +1067,12 @@
 			mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
 			fsmgr_flags = "wait";
 		};
+		oem {
+			compatible = "android,oem";
+			dev = "/dev/block/by-name/oem";
+			type = "ext4";
+			mnt_flags = "rw,noatime,nodiratime,noauto_da_alloc";
+			fsmgr_flags = "wait,check";
+		};
 	};
 };
