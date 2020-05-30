@@ -23,6 +23,7 @@
 #include <asm/unaligned.h>
 
 #include <linux/notifier.h>
+#include <linux/proc_fs.h>
 int wacom_touch_action_down = 0;
 static RAW_NOTIFIER_HEAD(wacom_touch_event_notifier);
 int register_wacom_touch_event_notifier(struct notifier_block *nb) {
@@ -272,6 +273,18 @@ static void wacom_i2c_close(struct input_dev *dev)
 	disable_irq(client->irq);
 }
 
+static ssize_t wacom_fw_version_show(struct device *dev,
+				     struct device_attribute *attr, char *buf)
+{
+        struct i2c_client *client = to_i2c_client(dev);
+        struct wacom_i2c *wac_i2c = i2c_get_clientdata(client);
+
+        return sprintf(buf,"%04X.%04X\n",
+		       wac_i2c->input->id.product,
+		       wac_i2c->features->fw_version);
+}
+static DEVICE_ATTR(fw_version, S_IRUGO, wacom_fw_version_show, NULL);
+
 static int g_irq_gpio = -1;
 static int wacom_i2c_probe(struct i2c_client *client,
 				     const struct i2c_device_id *id)
@@ -283,6 +296,7 @@ static int wacom_i2c_probe(struct i2c_client *client,
 	struct device_node *wac_np;
 	int reset_gpio, irq_gpio = -1, pen_detect_gpio, pwren_gpio;
 	int error;
+	char buf[256];
 
 	printk("wacom_i2c_probe\n");
 	wac_np = client->dev.of_node;
@@ -425,8 +439,22 @@ static int wacom_i2c_probe(struct i2c_client *client,
 	}
 
 	i2c_set_clientdata(client, wac_i2c);
+	error = device_create_file(&client->dev, &dev_attr_fw_version);
+	if (error) {
+		dev_err(&client->dev, "create fw_version failed,%d\n", error);
+		goto err_unregister_input;
+	}
+
+	memset(buf, 0, sizeof(buf));
+	snprintf(buf, sizeof(buf) - 1,
+		 "/sys/bus/i2c/devices/%s/fw_version",
+		 kobject_name(&client->dev.kobj));
+	proc_symlink("ratta/emr_fw_version", NULL, buf);
+
 	return 0;
 
+err_unregister_input:
+	input_unregister_device(wac_i2c->input);
 err_free_irq:
 	free_irq(client->irq, wac_i2c);
 err_free_irq_gpio:
@@ -448,6 +476,7 @@ static int wacom_i2c_remove(struct i2c_client *client)
 {
 	struct wacom_i2c *wac_i2c = i2c_get_clientdata(client);
 
+	device_remove_file(&client->dev, &dev_attr_fw_version);
 	free_irq(client->irq, wac_i2c);
 	input_unregister_device(wac_i2c->input);
 	kfree(wac_i2c);
