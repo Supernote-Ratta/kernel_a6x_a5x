@@ -30,6 +30,7 @@
 #include <asm/unaligned.h>
 #include <linux/of_gpio.h>
 #include <linux/suspend.h>
+#include <linux/proc_fs.h>
 
 /* Firmware files */
 #define MXT_FW_NAME		"maxtouch.fw"
@@ -2654,6 +2655,7 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct mxt_data *data;
 	const struct mxt_platform_data *pdata;
+	char buf[256];
 	int error;
 
 	pdata = mxt_get_platform_data(client);
@@ -2698,6 +2700,12 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 			error);
 		goto err_free_object;
 	}
+
+	memset(buf, 0, sizeof(buf));
+	snprintf(buf, sizeof(buf) - 1,
+		 "/sys/bus/i2c/devices/%s/fw_version",
+		 kobject_name(&client->dev.kobj));
+	proc_symlink("ratta/cap_fw_version", NULL, buf);
 
 	return 0;
 
