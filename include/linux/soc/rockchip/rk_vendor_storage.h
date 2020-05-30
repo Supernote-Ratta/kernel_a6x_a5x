@@ -17,7 +17,9 @@
 #define BT_MAC_ID	4
 #define SENSOR_CALIBRATION_ID 7
 #define EINK_VCOM_ID 12
-#define RATTA_ANDROID_ID 16
+#define RATTA_AID_ID 16
+#define RATTA_USRKEY_ID 17
+#define RATTA_SAID_ID 18
 
 int rk_vendor_read(u32 id, void *pbuf, u32 size);
 int rk_vendor_write(u32 id, void *pbuf, u32 size);

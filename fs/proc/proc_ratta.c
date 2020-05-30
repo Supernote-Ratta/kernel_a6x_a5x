@@ -27,38 +27,28 @@ static const struct file_operations version_proc_fops = {
 	.release	= single_release,
 };
 
-static int aid_proc_show(struct seq_file *m, void *v)
+static int aid_common_write(const char __user *buf, size_t count, int id)
 {
-	char aid_str[64];
+	char aid_str[72], *pstr, *tmp;
+	int i, ret;
 
 	if (!is_rk_vendor_ready())
+		return -ENODEV;
+
+	memset(aid_str, 0, sizeof(aid_str));
+	rk_vendor_read(id, aid_str, sizeof(aid_str) - 1);
+	if ((strlen(aid_str) == 16) ||
+	    (strlen(aid_str) == 32) ||
+	    (strlen(aid_str) == 64))
 		return 0;
 
 	memset(aid_str, 0, sizeof(aid_str));
-	rk_vendor_read(RATTA_ANDROID_ID, aid_str, 16);
-	if (strlen(aid_str))
-		seq_printf(m, "%s\n", aid_str);
-
-	return 0;
-}
-
-static int aid_proc_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, aid_proc_show, NULL);
-}
-
-static ssize_t aid_proc_write(struct file *file, const char __user *buf,
-			      size_t count, loff_t *off)
-{
-	char aid_str[64], *pstr, *tmp;
-
-	if (!is_rk_vendor_ready())
-		return 0;
-
-	memset(aid_str, 0, sizeof(aid_str));
-	if (copy_from_user(aid_str, buf, (count < sizeof(aid_str)) ?
-			   count : sizeof(aid_str) - 1))
-		return 0;
+	ret = copy_from_user(aid_str, buf, (count < sizeof(aid_str)) ?
+			     count : sizeof(aid_str) - 1);
+	if (ret) {
+		printk(KERN_ERR "copy aid(%d) from user failed,%d\n", id, ret);
+		return ret;
+	}
 
 	pstr = strchr(aid_str, '\n');
 	if (pstr)
@@ -73,18 +63,130 @@ static ssize_t aid_proc_write(struct file *file, const char __user *buf,
 	tmp = strchr(pstr, ' ');
 	if (tmp)
 		*tmp = 0;
-	if (strlen(pstr) != 16)
+	if ((strlen(pstr) != 16) &&
+	    (strlen(pstr) != 32) &&
+	    (strlen(pstr) != 64))
 		return -EINVAL;
 
-	rk_vendor_write(RATTA_ANDROID_ID, pstr, strlen(pstr));
+	for (i = 0; i < strlen(pstr); i++) {
+		if (!(((pstr[i] <= '9') && (pstr[i] >= '0')) ||
+		    ((pstr[i] <= 'f') && (pstr[i] >= 'a')) ||
+		    ((pstr[i] <= 'F') && (pstr[i] >= 'A'))))
+			return -EINVAL;
+	}
 
-	return strlen(pstr);
+	rk_vendor_write(id, pstr, strlen(pstr));
+
+	return 0;
+}
+
+static int aid_proc_show(struct seq_file *m, void *v)
+{
+	char aid_str[72];
+
+	if (!is_rk_vendor_ready())
+		return 0;
+
+	memset(aid_str, 0, sizeof(aid_str));
+	rk_vendor_read(RATTA_AID_ID, aid_str, sizeof(aid_str) - 1);
+	if (strlen(aid_str))
+		seq_printf(m, "%s\n", aid_str);
+
+	return 0;
+}
+
+static int aid_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, aid_proc_show, NULL);
+}
+
+static ssize_t aid_proc_write(struct file *file, const char __user *buf,
+			      size_t count, loff_t *off)
+{
+	if (aid_common_write(buf, count, RATTA_AID_ID))
+		return 0;
+
+	return count;
 }
 
 static const struct file_operations aid_proc_fops = {
 	.open		= aid_proc_open,
 	.read		= seq_read,
 	.write		= aid_proc_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int usrkey_proc_show(struct seq_file *m, void *v)
+{
+	char aid_str[72];
+
+	if (!is_rk_vendor_ready())
+		return 0;
+
+	memset(aid_str, 0, sizeof(aid_str));
+	rk_vendor_read(RATTA_USRKEY_ID, aid_str, sizeof(aid_str) - 1);
+	if (strlen(aid_str))
+		seq_printf(m, "%s\n", aid_str);
+
+	return 0;
+}
+
+static int usrkey_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, usrkey_proc_show, NULL);
+}
+
+static ssize_t usrkey_proc_write(struct file *file, const char __user *buf,
+				 size_t count, loff_t *off)
+{
+	if (aid_common_write(buf, count, RATTA_USRKEY_ID))
+		return 0;
+
+	return count;
+}
+
+static const struct file_operations usrkey_proc_fops = {
+	.open		= usrkey_proc_open,
+	.read		= seq_read,
+	.write		= usrkey_proc_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int said_proc_show(struct seq_file *m, void *v)
+{
+	char aid_str[72];
+
+	if (!is_rk_vendor_ready())
+		return 0;
+
+	memset(aid_str, 0, sizeof(aid_str));
+	rk_vendor_read(RATTA_SAID_ID, aid_str, sizeof(aid_str) - 1);
+	if (strlen(aid_str))
+		seq_printf(m, "%s\n", aid_str);
+
+	return 0;
+}
+
+static int said_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, said_proc_show, NULL);
+}
+
+static ssize_t said_proc_write(struct file *file, const char __user *buf,
+			      size_t count, loff_t *off)
+{
+	if (aid_common_write(buf, count, RATTA_SAID_ID))
+		return 0;
+
+	return count;
+}
+
+static const struct file_operations said_proc_fops = {
+	.open		= said_proc_open,
+	.read		= seq_read,
+	.write		= said_proc_write,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
@@ -129,6 +231,8 @@ static int __init proc_ratta_init(void)
 	proc_create("version", S_IRUSR | S_IRGRP | S_IROTH,
 		    proc_ratta_root, &version_proc_fops);
 	proc_create("aid", 0660, proc_ratta_root, &aid_proc_fops);
+	proc_create("usrkey", 0660, proc_ratta_root, &usrkey_proc_fops);
+	proc_create("said", 0660, proc_ratta_root, &said_proc_fops);
 	proc_create("sn", 0444, proc_ratta_root, &sn_proc_fops);
 
 done:
