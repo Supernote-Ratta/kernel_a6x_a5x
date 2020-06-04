@@ -850,7 +850,6 @@
 			aw2013,hold-time-ms = <1>;
 			aw2013,fall-time-ms = <2>;
 			aw2013,off-time-ms = <1>;
-			linux,default-trigger = "battery-charging";
 		};
 
 		aw2013,green {
@@ -862,7 +861,6 @@
 			aw2013,hold-time-ms = <1>;
 			aw2013,fall-time-ms = <2>;
 			aw2013,off-time-ms = <1>;
-			linux,default-trigger = "battery-full";
 		};
 
 		aw2013,blue {
