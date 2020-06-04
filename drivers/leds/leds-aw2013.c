@@ -31,6 +31,7 @@
 #define AW_REG_TIMESET1_BASE		0x38
 /* register bits */
 #define AW2013_CHIPID			0x33
+#define AW2013_CHIPID_2			0x9
 #define AW_LED_MOUDLE_ENABLE_MASK	0x01
 #define AW_LED_FADE_OFF_MASK		0x40
 #define AW_LED_FADE_ON_MASK		0x20
@@ -256,13 +257,17 @@ static struct attribute_group aw2013_led_attr_group = {
 static int aw_2013_check_chipid(struct aw2013_led *led)
 {
 	u8 val;
-	aw2013_write(led, AW_REG_RESET, AW_LED_RESET_MASK);
-	udelay(AW_LED_RESET_DELAY);
-	aw2013_read(led, AW_REG_RESET, &val);
-	if (val == AW2013_CHIPID)
-		return 0;
-	else
-		return -EINVAL;
+	int i ;
+	for (i=0;i<5;i++) {
+		aw2013_write(led, AW_REG_RESET, AW_LED_RESET_MASK);
+		msleep(i+5);
+		aw2013_read(led, AW_REG_RESET, &val);
+		if (val == AW2013_CHIPID || val == AW2013_CHIPID_2 ) 
+			return 0;
+		else
+			pr_info("aw2013 check id error, id=%d \n ",val);
+	}
+	return -1;
 }
 #ifdef CONFIG_PM
 static int aw2013_led_suspend(struct device *dev)
@@ -489,7 +494,7 @@ static int aw2013_led_probe(struct i2c_client *client,
 	ret = aw_2013_check_chipid(led_array);
 	if (ret) {
 		dev_err(&client->dev, "Check chip id error\n");
-		goto free_led_arry;
+	//	goto free_led_arry;
 	}
 	ret = aw2013_led_parse_child_node(led_array, node);
 	if (ret) {
