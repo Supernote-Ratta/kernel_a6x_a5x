@@ -3653,8 +3653,8 @@ static int cyttsp5_put_device_into_sleep_(struct cyttsp5_core_data *cd)
 {
 	int rc;
 
-		//dev_err(cd->dev, "%s: \n",
-		//		__func__);
+	if(cd->irq_wake == 1)
+		return 0;
 	if (IS_DEEP_SLEEP_CONFIGURED(cd->easy_wakeup_gesture))
 		rc = cyttsp5_put_device_into_deep_sleep_(cd);
 	else
@@ -4793,6 +4793,10 @@ static int cyttsp5_core_suspend(struct device *dev)
 	struct cyttsp5_core_data *cd = dev_get_drvdata(dev);
 
 	//printk("cyttsp5_core_suspend :easy_wakeup_gesture=%d\n", cd->easy_wakeup_gesture);
+	if (PM_SUSPEND_IDLE == get_suspend_state()){ 
+		cd->irq_wake = 1;
+	}
+
 	cyttsp5_core_sleep(cd);
 
 	if (PM_SUSPEND_IDLE != get_suspend_state())
@@ -4810,7 +4814,6 @@ static int cyttsp5_core_suspend(struct device *dev)
 	}
 	else {
 		enable_irq_wake(cd->irq);
-		cd->irq_wake = 1;
 	}
 /*
 	if (IS_DEEP_SLEEP_CONFIGURED(cd->easy_wakeup_gesture)){	

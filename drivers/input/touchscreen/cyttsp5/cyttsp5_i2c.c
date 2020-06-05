@@ -171,15 +171,6 @@ static int cyttsp5_i2c_probe(struct i2c_client *client,
 		return -ENODEV;
 	}
 
-	rc = cyttsp5_i2c_read_default(&client->dev, buf, 16);
-	if(rc < 0)
-	{
-		printk("*****cyttsp5_i2c_probe cyttsp5_i2c_read_default rc=%d \n", rc);
-		if(pdata->core_pdata->init)
-			 pdata->core_pdata->init(pdata->core_pdata, 0, NULL);
-		return -ENODEV;	
-	}
-
 	rc = cyttsp5_probe(&cyttsp5_i2c_bus_ops, &client->dev, client->irq,
 			  CY_I2C_DATA_SIZE);
 
