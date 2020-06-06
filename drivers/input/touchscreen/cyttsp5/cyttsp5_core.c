@@ -5960,8 +5960,8 @@ static int cyttsp5_setup_irq_gpio(struct cyttsp5_core_data *cd)
 		/* use edge triggered interrupts */
 		irq_flags = IRQF_TRIGGER_FALLING | IRQF_ONESHOT ;
 
-	rc = request_threaded_irq(cd->irq, NULL, cyttsp5_irq, IRQF_TRIGGER_LOW | IRQF_ONESHOT | IRQF_NO_SUSPEND,
-		dev_name(dev), cd);
+	rc = request_threaded_irq(cd->irq, NULL, cyttsp5_irq, irq_flags |
+				  IRQF_NO_SUSPEND, dev_name(dev), cd);
 	if (rc < 0)
 		dev_err(dev, "%s: Error, could not request irq\n", __func__);
 	return rc;
