@@ -693,6 +693,7 @@
 	};
 };
 
+#define MXT_SUSPEND_DEEP_SLEEP 0
 &i2c1 {
 	status = "okay";
 
@@ -706,6 +707,9 @@
 		pinctrl-0 = <&touch_panel_gpio>;
 		atmel,power-gpio =<&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
 		atmel,reset-gpio = <&gpio0 RK_PB4 GPIO_ACTIVE_HIGH>;
+		atmel,suspend-mode = <MXT_SUSPEND_DEEP_SLEEP>;
+		atmel,cfg_name="maxtouch.cfg";
+
 	};
 
 	tsc@24 {
