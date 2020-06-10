@@ -19,31 +19,63 @@
 #include <linux/delay.h>
 #include <linux/of_gpio.h>
 #include <linux/gpio.h>
+#include <linux/spinlock.h>
+#include <linux/workqueue.h>
 
 #define DEVICE_NAME		"hall_sensor"
 #define CONVERSION_TIME_MS	50
 
 struct hall_sensor  {
 	struct input_dev *input;
+	struct delayed_work work;
+	spinlock_t mutex;
 	int irq;
 	int gpio;
 };
 
+static inline void hall_wake_worker(struct hall_sensor *hall)
+{
+	if (!hall)
+		return;
+
+	spin_lock(&hall->mutex);
+	cancel_delayed_work(&hall->work);
+	flush_delayed_work(&hall->work);
+	schedule_delayed_work(&hall->work,
+			      msecs_to_jiffies(100));
+	spin_unlock(&hall->mutex);
+}
+
 static irqreturn_t hall_sensor_irq(int irq, void *dev_id)
 {
-	struct hall_sensor *hall_data = dev_id;
-	int value = 0;
+	struct hall_sensor *hall = dev_id;
 
-	/* wait for stable electrical level */
-	value = gpio_get_value(hall_data->gpio);
-	msleep(CONVERSION_TIME_MS);
-	if (gpio_get_value(hall_data->gpio) == value) {
-		input_report_key(hall_data->input, KEY_POWER, 1);
-		input_report_key(hall_data->input, KEY_POWER, 0);
-		input_sync(hall_data->input);
-	}
+	hall_wake_worker(hall);
 
 	return IRQ_HANDLED;
+}
+
+static void hall_work_func(struct work_struct *work)
+{
+	struct hall_sensor *hall = container_of(work, struct hall_sensor, work);
+	struct device *dev = &hall->input->dev;
+	int value;
+
+	value = gpio_get_value(hall->gpio);
+
+	if (value == 0) {
+		dev_info(dev, "Hall report sleep key.\n");
+		input_report_key(hall->input, KEY_SLEEP, 1);
+		input_sync(hall->input);
+		input_report_key(hall->input, KEY_SLEEP, 0);
+		input_sync(hall->input);
+	} else if (value == 1) {
+		dev_info(dev, "Hall report wakeup key.\n");
+		input_report_key(hall->input, KEY_WAKEUP, 1);
+		input_sync(hall->input);
+		input_report_key(hall->input, KEY_WAKEUP, 0);
+		input_sync(hall->input);
+	}
 }
 
 static int hall_sensor_probe(struct platform_device *pdev)
@@ -81,8 +113,11 @@ static int hall_sensor_probe(struct platform_device *pdev)
 	hall->input->name = "Hall Sensor";
 	hall->input->id.bustype = BUS_HOST;
 	hall->input->dev.parent = &pdev->dev;
-	input_set_capability(hall->input, EV_KEY, KEY_POWER);
+	input_set_capability(hall->input, EV_KEY, KEY_WAKEUP);
+	input_set_capability(hall->input, EV_KEY, KEY_SLEEP);
 	input_set_drvdata(hall->input, hall);
+	INIT_DELAYED_WORK(&hall->work, hall_work_func);
+	spin_lock_init(&hall->mutex);
 
 	platform_set_drvdata(pdev, hall);
 	device_init_wakeup(&pdev->dev, true);
@@ -158,6 +193,8 @@ static int __maybe_unused hall_sensor_resume(struct device *dev)
 
 	if (device_may_wakeup(dev))
 		disable_irq_wake(hall->irq);
+
+	hall_wake_worker(hall);
 
 	return 0;
 }
