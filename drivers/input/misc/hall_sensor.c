@@ -27,7 +27,7 @@
 
 struct hall_sensor  {
 	struct input_dev *input;
-	struct delayed_work work;
+	struct delayed_work hall_work;
 	spinlock_t mutex;
 	int irq;
 	int gpio;
@@ -39,9 +39,9 @@ static inline void hall_wake_worker(struct hall_sensor *hall)
 		return;
 
 	spin_lock(&hall->mutex);
-	cancel_delayed_work(&hall->work);
-	flush_delayed_work(&hall->work);
-	schedule_delayed_work(&hall->work,
+	cancel_delayed_work(&hall->hall_work);
+	flush_delayed_work(&hall->hall_work);
+	schedule_delayed_work(&hall->hall_work,
 			      msecs_to_jiffies(100));
 	spin_unlock(&hall->mutex);
 }
@@ -57,7 +57,8 @@ static irqreturn_t hall_sensor_irq(int irq, void *dev_id)
 
 static void hall_work_func(struct work_struct *work)
 {
-	struct hall_sensor *hall = container_of(work, struct hall_sensor, work);
+	struct hall_sensor *hall = container_of((struct delayed_work *)work,
+						struct hall_sensor, hall_work);
 	struct device *dev = &hall->input->dev;
 	int value;
 
@@ -116,7 +117,7 @@ static int hall_sensor_probe(struct platform_device *pdev)
 	input_set_capability(hall->input, EV_KEY, KEY_WAKEUP);
 	input_set_capability(hall->input, EV_KEY, KEY_SLEEP);
 	input_set_drvdata(hall->input, hall);
-	INIT_DELAYED_WORK(&hall->work, hall_work_func);
+	INIT_DELAYED_WORK(&hall->hall_work, hall_work_func);
 	spin_lock_init(&hall->mutex);
 
 	platform_set_drvdata(pdev, hall);
