@@ -122,6 +122,16 @@ config TOUCHSCREEN_ATMEL_MXT
 	  To compile this driver as a module, choose M here: the
 	  module will be called atmel_mxt_ts.
 
+config RATTA_CTP_ATMEL_ACCURACY_ADJ
+	tristate "Ratta touchscreen a6 atmel accuracy adj"
+	depends on TOUCHSCREEN_ATMEL_MXT 
+	help
+	  Say Y here if ratta a6 use Atmel ctp,
+
+	  If unsure, say N.
+	  To compile this driver as a module, choose M here: the
+	  module will be called atmel_mxt_ts.
+
 config TOUCHSCREEN_AUO_PIXCIR
 	tristate "AUO in-cell touchscreen using Pixcir ICs"
 	depends on I2C

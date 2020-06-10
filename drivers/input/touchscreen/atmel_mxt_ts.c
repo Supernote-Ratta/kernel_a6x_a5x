@@ -1066,6 +1066,32 @@ static void mxt_proc_t9_message(struct mxt_data *data, u8 *message)
 	data->update_input = true;
 }
 
+#ifdef CONFIG_RATTA_CTP_ATMEL_ACCURACY_ADJ
+#define Y_HALF 936  //1872/2
+#define Y_ADJUST_TOP 3 
+#define Y_ADJUST_BOTTOM 3
+static void adjust_cursor_accuracy(struct mxt_data *data, u16 *x, u16 *y)
+{
+	struct device *dev = &data->client->dev;
+
+	/* y zoom out */
+	dev_dbg(dev, "y_origin=%d,x=%d",*y,*x);
+	if ( *y >  Y_HALF )  { //1872/2
+		*y = *y - (*y - Y_HALF) * Y_ADJUST_BOTTOM / 93;
+	}
+#if 0
+	 else{
+	 *y = *y + (Y_HALF - *y) * Y_ADJUST_TOP / 93;
+	 }
+#endif
+
+	/* x zoom out */
+	if (*x>10 && *x < data->max_x )
+		*x = *x + (1400 - *x) * 3/140;
+	dev_dbg(dev, "y_current=%d,x=%d\n",*y,*x);
+}
+#endif
+
 static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 {
 	struct device *dev = &data->client->dev;
@@ -1185,6 +1211,9 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 	input_mt_slot(input_dev, id);
 
 	if (active) {
+#ifdef CONFIG_RATTA_CTP_ATMEL_ACCURACY_ADJ
+		adjust_cursor_accuracy(data,&x,&y);
+#endif
 		dev_dbg(dev, "[%u] type:%u x:%u y:%u a:%02X p:%02X v:%02X\n",
 			id, type, x, y, major, pressure, orientation);
 
@@ -3094,6 +3123,7 @@ static ssize_t mxt_update_fw_store(struct device *dev,
 	if (error)
 		return error;
 
+//	request_bus_freq(BUS_FREQ_HIGH);
 	error = mxt_load_fw(dev);
 	if (error) {
 		dev_err(dev, "The firmware update failed(%d)\n", error);
@@ -3103,8 +3133,8 @@ static ssize_t mxt_update_fw_store(struct device *dev,
 
 		data->suspended = false;
 		msleep(1000);
-
 		error = mxt_initialize(data);
+//	release_bus_freq(BUS_FREQ_HIGH);
 		if (error)
 			return error;
 	}
