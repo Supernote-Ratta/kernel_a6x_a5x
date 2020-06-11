@@ -6,7 +6,11 @@
 #include <linux/uaccess.h>
 #include <linux/soc/rockchip/rk_vendor_storage.h>
 
+#include <linux/proc_ratta.h>
+
 #define RATTA_KERNEL_VERSION "debug-20200529a"
+
+static int bootmode = 0;
 
 static int version_proc_show(struct seq_file *m, void *v)
 {
@@ -239,3 +243,21 @@ done:
 	return 0;
 }
 fs_initcall(proc_ratta_init);
+
+int ratta_get_bootmode(void)
+{
+	return bootmode;
+}
+
+static int ratta_bootmode_setup(char *options)
+{
+	if (!strncmp(options, "normal", strlen("normal"))) {
+		bootmode = RATTA_MODE_NORMAL;
+	} else if (!strncmp(options, "factory", strlen("factory"))) {
+		bootmode = RATTA_MODE_FACTORY;
+	}
+
+	return 0;
+}
+
+__setup("ratta.bootmode=", ratta_bootmode_setup);
