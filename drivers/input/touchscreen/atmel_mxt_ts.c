@@ -24,6 +24,7 @@
 #include <linux/i2c.h>
 #include <linux/i2c/atmel_mxt_ts.h>
 #include <linux/input/mt.h>
+#include <linux/input/ratta_mt.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/of.h>
@@ -36,6 +37,8 @@
 #include <linux/of_gpio.h>
 #include <linux/proc_fs.h>
 #include <linux/suspend.h>
+
+#include <linux/proc_ratta.h>
 
 /* Configuration file */
 #define MXT_CFG_MAGIC		"OBP_RAW V1"
@@ -1119,6 +1122,7 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 	status = message[1];
 	x = get_unaligned_le16(&message[2]);
 	y = get_unaligned_le16(&message[4]);
+	temp_y = data->max_x - x;
 
 	if (status & MXT_T100_DETECT) {
 		type = (status & MXT_T100_TYPE_MASK) >> 4;
@@ -1168,10 +1172,13 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 
 		case MXT_T100_TYPE_ACTIVE_STYLUS:
 			/* Report input buttons */
-			input_report_key(input_dev, BTN_STYLUS,
-					 message[6] & MXT_T107_STYLUS_BUTTON0);
-			input_report_key(input_dev, BTN_STYLUS2,
-					 message[6] & MXT_T107_STYLUS_BUTTON1);
+			if ((temp_y > 0) ||
+			    (ratta_get_bootmode() == RATTA_MODE_FACTORY)) {
+				input_report_key(input_dev, BTN_STYLUS,
+						 message[6] & MXT_T107_STYLUS_BUTTON0);
+				input_report_key(input_dev, BTN_STYLUS2,
+						 message[6] & MXT_T107_STYLUS_BUTTON1);
+			}
 
 			/* stylus in range, but position unavailable */
 			if (!(message[6] & MXT_T107_STYLUS_HOVER))
@@ -1208,6 +1215,15 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 	if (!pressure && !hover)
 		pressure = MXT_PRESSURE_DEFAULT;
 
+	if (active)
+		ratta_mt_record(id, y, data->max_x - x, true);
+	else
+		ratta_mt_record(id, 0, 0, false);
+
+	if ((temp_y < 0) &&
+	    (ratta_get_bootmode() != RATTA_MODE_FACTORY))
+		return;
+
 	input_mt_slot(input_dev, id);
 
 	if (active) {
@@ -1218,16 +1234,12 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 			id, type, x, y, major, pressure, orientation);
 
 		input_mt_report_slot_state(input_dev, tool, 1);
-		temp_y = data->max_x-x;
-		if( temp_y < 0 )
-			temp_y = 0;
 		input_report_abs(input_dev, ABS_MT_POSITION_Y, temp_y);
 		input_report_abs(input_dev, ABS_MT_POSITION_X, y);
 		input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, major);
 		input_report_abs(input_dev, ABS_MT_PRESSURE, pressure);
 		input_report_abs(input_dev, ABS_MT_DISTANCE, distance);
 		input_report_abs(input_dev, ABS_MT_ORIENTATION, orientation);
-
 	} else {
 		dev_dbg(dev, "[%u] release\n", id);
 
@@ -3812,6 +3824,8 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	if (error)
 		goto err_free_irq;
 
+        ratta_mt_probe(&client->dev);
+
 	memset(buf, 0, sizeof(buf));
 	snprintf(buf, sizeof(buf) - 1,
 		 "/sys/bus/i2c/devices/%s/version",
@@ -3832,6 +3846,7 @@ static int mxt_remove(struct i2c_client *client)
 {
 	struct mxt_data *data = i2c_get_clientdata(client);
 
+        ratta_mt_remove();
 	sysfs_remove_group(&client->dev.kobj, &mxt_fw_attr_group);
 	mxt_debug_msg_remove(data);
 	mxt_sysfs_remove(data);
