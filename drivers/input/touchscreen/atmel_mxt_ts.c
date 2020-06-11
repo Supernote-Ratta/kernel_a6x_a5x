@@ -3874,9 +3874,9 @@ static int __maybe_unused mxt_suspend(struct device *dev)
 
 	mutex_lock(&input_dev->mutex);
 
-	if ((get_suspend_state() == PM_SUSPEND_IDLE) &&
-	    !irqd_is_wakeup_set(irq_get_irq_data(client->irq))) {
-		enable_irq_wake(client->irq);
+	if ((get_suspend_state() == PM_SUSPEND_IDLE)) {
+		if (!irqd_is_wakeup_set(irq_get_irq_data(client->irq)))
+			enable_irq_wake(client->irq);
 		mutex_unlock(&input_dev->mutex);
 		dev_info(&client->dev, "enable irq wake\n");
 		return 0;
@@ -3901,8 +3901,9 @@ static int __maybe_unused mxt_resume(struct device *dev)
 
 	mutex_lock(&input_dev->mutex);
 
-	if (irqd_is_wakeup_set(irq_get_irq_data(client->irq))) {
-		disable_irq_wake(client->irq);
+	if ((get_suspend_state() == PM_SUSPEND_IDLE)) {
+		if (irqd_is_wakeup_set(irq_get_irq_data(client->irq)))
+			disable_irq_wake(client->irq);
 		mutex_unlock(&input_dev->mutex);
 		dev_info(&client->dev, "disable irq wake\n");
 		return 0;
