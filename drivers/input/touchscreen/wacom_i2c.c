@@ -24,6 +24,8 @@
 
 #include <linux/notifier.h>
 #include <linux/proc_fs.h>
+#include <linux/proc_ratta.h>
+
 int wacom_touch_action_down = 0;
 static RAW_NOTIFIER_HEAD(wacom_touch_event_notifier);
 int register_wacom_touch_event_notifier(struct notifier_block *nb) {
@@ -216,6 +218,13 @@ static irqreturn_t wacom_i2c_irq(int irq, void *dev_id)
 			BTN_TOOL_RUBBER : BTN_TOOL_PEN;
 
 	wac_i2c->prox = data[3] & 0x20;
+
+	if (data[2] == 2)
+		/* G12 */
+		ratta_set_pen_type(12);
+	else
+		/* G14 */
+		ratta_set_pen_type(26);
 
 	if (1 == exchange_x_y_flag) {
 		swap(x, y);
