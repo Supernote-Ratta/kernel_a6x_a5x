@@ -3,6 +3,7 @@
 #include <linux/kernel.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/spinlock.h>
 #include <linux/uaccess.h>
 #include <linux/soc/rockchip/rk_vendor_storage.h>
 
@@ -11,7 +12,8 @@
 #define RATTA_KERNEL_VERSION "debug-20200529a"
 
 static int bootmode = 0;
-static int pen_type = 0;
+static int volatile pen_type = 0;
+static DEFINE_SPINLOCK(proc_mutex);
 
 static int version_proc_show(struct seq_file *m, void *v)
 {
@@ -272,7 +274,10 @@ int ratta_get_bootmode(void)
 
 void ratta_set_pen_type(int pen)
 {
-	pen_type = pen;
+	spin_lock(&proc_mutex);
+	if (pen_type != pen)
+		pen_type = pen;
+	spin_unlock(&proc_mutex);
 }
 
 static int ratta_bootmode_setup(char *options)
