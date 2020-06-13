@@ -11,6 +11,7 @@
 #define RATTA_KERNEL_VERSION "debug-20200529a"
 
 static int bootmode = 0;
+static int pen_type = 0;
 
 static int version_proc_show(struct seq_file *m, void *v)
 {
@@ -222,6 +223,25 @@ static const struct file_operations sn_proc_fops = {
 	.release	= single_release,
 };
 
+static int pen_type_proc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", pen_type);
+
+	return 0;
+}
+
+static int pen_type_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, pen_type_proc_show, NULL);
+}
+
+static const struct file_operations pen_type_proc_fops = {
+	.open		= pen_type_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 static int __init proc_ratta_init(void)
 {
 	struct proc_dir_entry *proc_ratta_root;
@@ -238,6 +258,7 @@ static int __init proc_ratta_init(void)
 	proc_create("usrkey", 0660, proc_ratta_root, &usrkey_proc_fops);
 	proc_create("said", 0660, proc_ratta_root, &said_proc_fops);
 	proc_create("sn", 0444, proc_ratta_root, &sn_proc_fops);
+	proc_create("pen_type", 0444, proc_ratta_root, &pen_type_proc_fops);
 
 done:
 	return 0;
@@ -247,6 +268,11 @@ fs_initcall(proc_ratta_init);
 int ratta_get_bootmode(void)
 {
 	return bootmode;
+}
+
+void ratta_set_pen_type(int pen)
+{
+	pen_type = pen;
 }
 
 static int ratta_bootmode_setup(char *options)

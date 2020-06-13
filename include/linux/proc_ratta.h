@@ -7,5 +7,6 @@ enum {
 };
 
 int ratta_get_bootmode(void);
+void ratta_set_pen_type(int);
 
 #endif
