@@ -195,7 +195,7 @@ static int __maybe_unused hall_sensor_resume(struct device *dev)
 	if (device_may_wakeup(dev))
 		disable_irq_wake(hall->irq);
 
-	hall_wake_worker(hall);
+	//hall_wake_worker(hall);
 
 	return 0;
 }
