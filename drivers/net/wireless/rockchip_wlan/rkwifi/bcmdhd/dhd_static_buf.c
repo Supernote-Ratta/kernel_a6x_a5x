@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -7,7 +6,7 @@
 #include <linux/err.h>
 #include <linux/skbuff.h>
 
-#define	DHD_STATIC_VERSION_STR		"1.579.77.41.1"
+#define	DHD_STATIC_VERSION_STR		"1.579.77.41.9"
 
 #define BCMDHD_SDIO
 #define BCMDHD_PCIE
@@ -36,7 +35,7 @@ enum dhd_prealloc_index {
 	DHD_PREALLOC_DHD_LOG_DUMP_BUF_EX = 16,
 	DHD_PREALLOC_DHD_PKTLOG_DUMP_BUF = 17,
 	DHD_PREALLOC_STAT_REPORT_BUF = 18,
-	DHD_PREALLOC_WL_ESCAN_INFO = 19,
+	DHD_PREALLOC_WL_ESCAN = 19,
 	DHD_PREALLOC_FW_VERBOSE_RING = 20,
 	DHD_PREALLOC_FW_EVENT_RING = 21,
 	DHD_PREALLOC_DHD_EVENT_RING = 22,
@@ -52,10 +51,10 @@ enum dhd_prealloc_index {
 #define DHD_PREALLOC_DATABUF_SIZE	(64 * 1024)
 #define DHD_PREALLOC_OSL_BUF_SIZE	(STATIC_BUF_MAX_NUM * STATIC_BUF_SIZE)
 #define DHD_PREALLOC_WIPHY_ESCAN0_SIZE	(64 * 1024)
-#define DHD_PREALLOC_DHD_INFO_SIZE	(30 * 1024)
-#define DHD_PREALLOC_MEMDUMP_RAM_SIZE	(770 * 1024)
+#define DHD_PREALLOC_DHD_INFO_SIZE	(32 * 1024)
+#define DHD_PREALLOC_MEMDUMP_RAM_SIZE	(810 * 1024)
 #define DHD_PREALLOC_DHD_WLFC_HANGER_SIZE	(73 * 1024)
-#define DHD_PREALLOC_WL_ESCAN_INFO_SIZE	(66 * 1024)
+#define DHD_PREALLOC_WL_ESCAN_SIZE	(70 * 1024)
 #ifdef CONFIG_64BIT
 #define DHD_PREALLOC_IF_FLOW_LKUP_SIZE	(20 * 1024 * 2)
 #else
@@ -192,10 +191,10 @@ void *dhd_wlan_mem_prealloc(int section, unsigned long size)
 		}
 		return wlan_static_dhd_wlfc_hanger_buf;
 	}
-	if (section == DHD_PREALLOC_WL_ESCAN_INFO) {
-		if (size > DHD_PREALLOC_WL_ESCAN_INFO_SIZE) {
-			pr_err("request DHD_PREALLOC_WL_ESCAN_INFO_SIZE(%lu) > %d\n",
-				size, DHD_PREALLOC_WL_ESCAN_INFO_SIZE);
+	if (section == DHD_PREALLOC_WL_ESCAN) {
+		if (size > DHD_PREALLOC_WL_ESCAN_SIZE) {
+			pr_err("request DHD_PREALLOC_WL_ESCAN_SIZE(%lu) > %d\n",
+				size, DHD_PREALLOC_WL_ESCAN_SIZE);
 			return NULL;
 		}
 
@@ -252,6 +251,7 @@ static int dhd_init_wlan_mem(void)
 {
 	int i;
 	int j;
+	printk(KERN_ERR "%s(): %s\n", __func__, DHD_STATIC_VERSION_STR);
 
 	for (i = 0; i < DHD_SKB_1PAGE_BUF_NUM; i++) {
 		wlan_static_skb[i] = dev_alloc_skb(DHD_SKB_1PAGE_BUFSIZE);
@@ -327,10 +327,12 @@ static int dhd_init_wlan_mem(void)
 	wlan_static_if_flow_lkup = kmalloc(DHD_PREALLOC_IF_FLOW_LKUP_SIZE, GFP_KERNEL);
 	if (!wlan_static_if_flow_lkup)
 		goto err_mem_alloc;
+	pr_err("%s: sectoin %d, size=%d\n", __func__,
+		DHD_PREALLOC_IF_FLOW_LKUP, DHD_PREALLOC_IF_FLOW_LKUP_SIZE);
 #endif /* BCMDHD_PCIE */
 
 	wlan_static_dhd_memdump_ram_buf = kmalloc(DHD_PREALLOC_MEMDUMP_RAM_SIZE, GFP_KERNEL);
-	if (!wlan_static_dhd_memdump_ram_buf) 
+	if (!wlan_static_dhd_memdump_ram_buf)
 		goto err_mem_alloc;
 	pr_err("%s: sectoin %d, size=%d\n", __func__,
 		DHD_PREALLOC_MEMDUMP_RAM, DHD_PREALLOC_MEMDUMP_RAM_SIZE);
@@ -341,37 +343,35 @@ static int dhd_init_wlan_mem(void)
 	pr_err("%s: sectoin %d, size=%d\n", __func__,
 		DHD_PREALLOC_DHD_WLFC_HANGER, DHD_PREALLOC_DHD_WLFC_HANGER_SIZE);
 
-	wlan_static_wl_escan_info_buf = kmalloc(DHD_PREALLOC_WL_ESCAN_INFO_SIZE, GFP_KERNEL);
+	wlan_static_wl_escan_info_buf = kmalloc(DHD_PREALLOC_WL_ESCAN_SIZE, GFP_KERNEL);
 	if (!wlan_static_wl_escan_info_buf)
 		goto err_mem_alloc;
 	pr_err("%s: sectoin %d, size=%d\n", __func__,
-		DHD_PREALLOC_WL_ESCAN_INFO, DHD_PREALLOC_WL_ESCAN_INFO_SIZE);
+		DHD_PREALLOC_WL_ESCAN, DHD_PREALLOC_WL_ESCAN_SIZE);
 
-	wlan_static_fw_verbose_ring_buf = kmalloc(
-						DHD_PREALLOC_WIPHY_ESCAN0_SIZE,
-						GFP_KERNEL);
+	wlan_static_fw_verbose_ring_buf = kmalloc(FW_VERBOSE_RING_SIZE, GFP_KERNEL);
 	if (!wlan_static_fw_verbose_ring_buf)
 		goto err_mem_alloc;
 	pr_err("%s: sectoin %d, size=%d\n", __func__,
-		DHD_PREALLOC_FW_VERBOSE_RING, DHD_PREALLOC_WL_ESCAN_INFO_SIZE);
+		DHD_PREALLOC_FW_VERBOSE_RING, FW_VERBOSE_RING_SIZE);
 
-	wlan_static_fw_event_ring_buf = kmalloc(DHD_PREALLOC_WIPHY_ESCAN0_SIZE, GFP_KERNEL);
+	wlan_static_fw_event_ring_buf = kmalloc(FW_EVENT_RING_SIZE, GFP_KERNEL);
 	if (!wlan_static_fw_event_ring_buf)
 		goto err_mem_alloc;
 	pr_err("%s: sectoin %d, size=%d\n", __func__,
-		DHD_PREALLOC_FW_EVENT_RING, DHD_PREALLOC_WL_ESCAN_INFO_SIZE);
+		DHD_PREALLOC_FW_EVENT_RING, FW_EVENT_RING_SIZE);
 
-	wlan_static_dhd_event_ring_buf = kmalloc(DHD_PREALLOC_WIPHY_ESCAN0_SIZE, GFP_KERNEL);
+	wlan_static_dhd_event_ring_buf = kmalloc(DHD_EVENT_RING_SIZE, GFP_KERNEL);
 	if (!wlan_static_dhd_event_ring_buf)
 		goto err_mem_alloc;
 	pr_err("%s: sectoin %d, size=%d\n", __func__,
-		DHD_PREALLOC_DHD_EVENT_RING, DHD_PREALLOC_WL_ESCAN_INFO_SIZE);
+		DHD_PREALLOC_DHD_EVENT_RING, DHD_EVENT_RING_SIZE);
 
-	wlan_static_nan_event_ring_buf = kmalloc(DHD_PREALLOC_WIPHY_ESCAN0_SIZE, GFP_KERNEL);
+	wlan_static_nan_event_ring_buf = kmalloc(NAN_EVENT_RING_SIZE, GFP_KERNEL);
 	if (!wlan_static_nan_event_ring_buf)
 		goto err_mem_alloc;
 	pr_err("%s: sectoin %d, size=%d\n", __func__,
-		DHD_PREALLOC_NAN_EVENT_RING, DHD_PREALLOC_WL_ESCAN_INFO_SIZE);
+		DHD_PREALLOC_NAN_EVENT_RING, NAN_EVENT_RING_SIZE);
 
 	return 0;
 
@@ -416,7 +416,7 @@ err_mem_alloc:
 
 	if (wlan_static_wl_escan_info_buf)
 		kfree(wlan_static_wl_escan_info_buf);
-	
+
 #ifdef BCMDHD_PCIE
 	if (wlan_static_fw_verbose_ring_buf)
 		kfree(wlan_static_fw_verbose_ring_buf);
@@ -446,8 +446,6 @@ err_skb_alloc:
 static int __init
 dhd_static_buf_init(void)
 {
-	printk(KERN_ERR "%s(): %s\n", __func__, DHD_STATIC_VERSION_STR);
-
 	dhd_init_wlan_mem();
 
 	return 0;
@@ -514,7 +512,7 @@ dhd_static_buf_exit(void)
 
 	if (wlan_static_wl_escan_info_buf)
 		kfree(wlan_static_wl_escan_info_buf);
-	
+
 #ifdef BCMDHD_PCIE
 	if (wlan_static_fw_verbose_ring_buf)
 		kfree(wlan_static_fw_verbose_ring_buf);

@@ -77,7 +77,7 @@ struct p2p_info {
 	s8 vir_ifname[IFNAMSIZ];
 	unsigned long status;
 	struct p2p_bss bss[P2PAPI_BSSCFG_MAX];
-	struct timer_list listen_timer;
+	timer_list_compat_t listen_timer;
 	wl_p2p_sched_t noa;
 	wl_p2p_ops_t ops;
 	wlc_ssid_t ssid;
@@ -183,12 +183,11 @@ enum wl_cfgp2p_status {
 			printk args;							\
 		}									\
 	} while (0)
+
 #define INIT_TIMER(timer, func, duration, extra_delay)	\
 	do {				   \
-		init_timer(timer); \
-		timer->function = func; \
-		timer->expires = jiffies + msecs_to_jiffies(duration + extra_delay); \
-		timer->data = (unsigned long) cfg; \
+		init_timer_compat(timer, func, cfg); \
+		timer_expires(timer) = jiffies + msecs_to_jiffies(duration + extra_delay); \
 		add_timer(timer); \
 	} while (0);
 
@@ -245,7 +244,7 @@ enum wl_cfgp2p_status {
 #define P2P_ECSA_CNT 50
 
 extern void
-wl_cfgp2p_listen_expired(unsigned long data);
+wl_cfgp2p_listen_expired(ulong data);
 extern bool
 wl_cfgp2p_is_pub_action(void *frame, u32 frame_len);
 extern bool

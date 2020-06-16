@@ -48,6 +48,11 @@
 #include <linux/delay.h>
 #include <linux/vmalloc.h>
 #include <pcicfg.h>
+#include <dngl_stats.h>
+#include <dhd.h>
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(4, 8, 0))
+#include <asm-generic/pci-dma-compat.h>
+#endif
 
 
 #ifdef BCM_SECURE_DMA
@@ -538,7 +543,7 @@ int osl_static_mem_init(osl_t *osh, void *adapter)
 #ifdef CONFIG_DHD_USE_STATIC_BUF
 		if (!bcm_static_buf && adapter) {
 			if (!(bcm_static_buf = (bcm_static_buf_t *)wifi_platform_prealloc(adapter,
-				3, STATIC_BUF_SIZE + STATIC_BUF_TOTAL_LEN))) {
+				DHD_PREALLOC_OSL_BUF, STATIC_BUF_SIZE + STATIC_BUF_TOTAL_LEN))) {
 				printk("can not alloc static buf!\n");
 				bcm_static_skb = NULL;
 				ASSERT(osh->magic == OS_HANDLE_MAGIC);
@@ -557,7 +562,7 @@ int osl_static_mem_init(osl_t *osh, void *adapter)
 			int i;
 			void *skb_buff_ptr = 0;
 			bcm_static_skb = (bcm_static_pkt_t *)((char *)bcm_static_buf + 2048);
-			skb_buff_ptr = wifi_platform_prealloc(adapter, 4, 0);
+			skb_buff_ptr = wifi_platform_prealloc(adapter, DHD_PREALLOC_SKB_BUF, 0);
 			if (!skb_buff_ptr) {
 				printk("cannot alloc static buf!\n");
 				bcm_static_buf = NULL;
@@ -1953,10 +1958,10 @@ osl_sleep(uint ms)
 uint64
 osl_sysuptime_us(void)
 {
-	struct timeval tv;
+	struct osl_timespec tv;
 	uint64 usec;
 
-	do_gettimeofday(&tv);
+	osl_do_gettimeofday(&tv);
 	/* tv_usec content is fraction of a second */
 	usec = (uint64)tv.tv_sec * 1000000ul + tv.tv_usec;
 	return usec;
@@ -2148,9 +2153,13 @@ osl_os_get_image_block(char *buf, int len, void *image)
 	if (!image)
 		return 0;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	rdlen = kernel_read(fp, buf, len, &fp->f_pos);
+#else
 	rdlen = kernel_read(fp, fp->f_pos, buf, len);
 	if (rdlen > 0)
 		fp->f_pos += rdlen;
+#endif
 
 	return rdlen;
 }
@@ -2677,13 +2686,19 @@ osl_pkt_orphan_partial(struct sk_buff *skb, int tsq)
 	 */
 	fraction = skb->truesize * (tsq - 1) / tsq;
 	skb->truesize -= fraction;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+	atomic_sub(fraction, &skb->sk->sk_wmem_alloc.refs);
+#else
 	atomic_sub(fraction, &skb->sk->sk_wmem_alloc);
+#endif /* LINUX_VERSION >= 4.13.0 */
+	skb_orphan(skb);
 }
 #endif /* LINUX_VERSION >= 3.6.0 && TSQ_MULTIPLIER */
 
 /* timer apis */
 /* Note: All timer api's are thread unsafe and should be protected with locks by caller */
 
+#ifdef REPORT_FATAL_TIMEOUTS
 osl_timer_t *
 osl_timer_init(osl_t *osh, const char *name, void (*fn)(void *arg), void *arg)
 {
@@ -2767,4 +2782,41 @@ osl_timer_del(osl_t *osh, osl_timer_t *t)
 		MFREE(NULL, t, sizeof(osl_timer_t));
 	}
 	return (TRUE);
+}
+#endif
+
+void
+osl_do_gettimeofday(struct osl_timespec *ts)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+	struct timespec curtime;
+#else
+	struct timeval curtime;
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+	getnstimeofday(&curtime);
+	ts->tv_nsec = curtime.tv_nsec;
+	ts->tv_usec = curtime.tv_nsec / 1000;
+#else
+	do_gettimeofday(&curtime);
+	ts->tv_usec = curtime.tv_usec;
+	ts->tv_nsec = curtime.tv_usec * 1000;
+#endif
+	ts->tv_sec = curtime.tv_sec;
+}
+
+void
+osl_get_monotonic_boottime(struct osl_timespec *ts)
+{
+	struct timespec curtime;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
+	curtime = ktime_to_timespec(ktime_get_boottime());
+#else
+	get_monotonic_boottime(&curtime);
+#endif
+	ts->tv_sec = curtime.tv_sec;
+	ts->tv_nsec = curtime.tv_nsec;
+	ts->tv_usec = curtime.tv_nsec / 1000;
 }

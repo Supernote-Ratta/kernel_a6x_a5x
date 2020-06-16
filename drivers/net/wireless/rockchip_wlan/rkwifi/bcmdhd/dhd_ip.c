@@ -127,7 +127,7 @@ typedef struct {
 	int ifidx;
 	uint8 supp_cnt;
 	dhd_pub_t *dhdp;
-	struct timer_list timer;
+	timer_list_compat_t timer;
 } tcpack_info_t;
 
 typedef struct _tdata_psh_info_t {
@@ -368,8 +368,8 @@ int dhd_tcpack_suppress_set(dhd_pub_t *dhdp, uint8 mode)
 		goto exit;
 	}
 
-	DHD_TRACE(("%s: TCP ACK Suppress mode %d -> mode %d\n",
-		__FUNCTION__, dhdp->tcpack_sup_mode, mode));
+	printf("%s: TCP ACK Suppress mode %d -> mode %d\n",
+		__FUNCTION__, dhdp->tcpack_sup_mode, mode);
 
 	/* Pre-process routines to change a new mode as per previous mode */
 	switch (prev_mode) {
@@ -464,9 +464,7 @@ int dhd_tcpack_suppress_set(dhd_pub_t *dhdp, uint8 mode)
 				tcpack_info_t *tcpack_info_tbl =
 					&tcpack_sup_module->tcpack_info_tbl[i];
 				tcpack_info_tbl->dhdp = dhdp;
-				init_timer(&tcpack_info_tbl->timer);
-				tcpack_info_tbl->timer.data = (ulong)tcpack_info_tbl;
-				tcpack_info_tbl->timer.function = dhd_tcpack_send;
+				init_timer_compat(&tcpack_info_tbl->timer, dhd_tcpack_send, tcpack_info_tbl);
 			}
 			break;
 	}

@@ -56,6 +56,7 @@
 #include <dhdioctl.h>
 #include <wlioctl.h>
 #include <dhd_cfg80211.h>
+#include <dhd_config.h>
 
 #if defined(BCMPCIE) && defined(DHD_FW_COREDUMP)
 extern int dhd_bus_mem_dump(dhd_pub_t *dhd);
@@ -1454,7 +1455,7 @@ wl_cfgp2p_discover_listen(struct bcm_cfg80211 *cfg, s32 channel, u32 duration_ms
 {
 #define EXTRA_DELAY_TIME	100
 	s32 ret = BCME_OK;
-	struct timer_list *_timer;
+	timer_list_compat_t *_timer;
 	s32 extra_delay;
 	struct net_device *netdev = bcmcfg_to_prmry_ndev(cfg);
 
@@ -1742,6 +1743,8 @@ wl_cfgp2p_supported(struct bcm_cfg80211 *cfg, struct net_device *ndev)
 			return ret;
 		}
 	}
+	if (cfg->pub->conf->fw_type == FW_TYPE_MESH)
+		p2p_supported = 0;
 	if (p2p_supported == 1) {
 		CFGP2P_INFO(("p2p is supported\n"));
 	} else {
@@ -1750,6 +1753,7 @@ wl_cfgp2p_supported(struct bcm_cfg80211 *cfg, struct net_device *ndev)
 	}
 	return p2p_supported;
 }
+
 /* Cleanup P2P resources */
 s32
 wl_cfgp2p_down(struct bcm_cfg80211 *cfg)

@@ -45,7 +45,7 @@ extern void dhd_pktfilter_offload_enable(dhd_pub_t * dhd, char *arg, int enable,
 #endif
 
 struct btcoex_info {
-	struct timer_list timer;
+	timer_list_compat_t timer;
 	u32 timer_ms;
 	u32 timer_on;
 	u32 ts_dhcp_start;	/* ms ts ecord time stats */
@@ -393,9 +393,7 @@ void* wl_cfg80211_btcoex_init(struct net_device *ndev)
 	btco_inf->ts_dhcp_ok = 0;
 	/* Set up timer for BT  */
 	btco_inf->timer_ms = 10;
-	init_timer(&btco_inf->timer);
-	btco_inf->timer.data = (ulong)btco_inf;
-	btco_inf->timer.function = wl_cfg80211_bt_timerfunc;
+	init_timer_compat(&btco_inf->timer, wl_cfg80211_bt_timerfunc, btco_inf);
 
 	btco_inf->dev = ndev;
 
@@ -492,7 +490,8 @@ int wl_cfg80211_set_btcoex_dhcp(struct net_device *dev, dhd_pub_t *dhd, char *co
 
 					btco_inf->bt_state = BT_DHCP_START;
 					btco_inf->timer_on = 1;
-					mod_timer(&btco_inf->timer, btco_inf->timer.expires);
+					mod_timer(&btco_inf->timer,
+						timer_expires(&btco_inf->timer));
 					WL_TRACE(("enable BT DHCP Timer\n"));
 				}
 		}

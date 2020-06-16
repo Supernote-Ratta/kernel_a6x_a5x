@@ -34,7 +34,9 @@
 
 #include <wldev_common.h>
 #include <bcmutils.h>
+#ifdef WL_CFG80211
 #include <wl_cfg80211.h>
+#endif
 #include <dhd_config.h>
 
 #define htod32(i) (i)
@@ -44,17 +46,17 @@
 #define htodchanspec(i) (i)
 #define dtohchanspec(i) (i)
 
-#define	WLDEV_ERROR(args)						\
-	do {										\
-		printk(KERN_ERR "WLDEV-ERROR) ");	\
-		printk args;							\
+#define	WLDEV_ERROR_MSG(x, args...)						\
+	do {												\
+		printk(KERN_INFO "WLDEV-ERROR) " x, ## args);	\
 	} while (0)
+#define WLDEV_ERROR(x) WLDEV_ERROR_MSG x
 
-#define	WLDEV_INFO(args)						\
-	do {										\
-		printk(KERN_INFO "WLDEV-INFO) ");	\
-		printk args;							\
+#define	WLDEV_INFO_MSG(x, args...)						\
+	do {												\
+		printk(KERN_INFO "WLDEV-INFO) " x, ## args);	\
 	} while (0)
+#define WLDEV_INFO(x) WLDEV_INFO_MSG x
 
 extern int dhd_ioctl_entry_local(struct net_device *net, wl_ioctl_t *ioc, int cmd);
 
@@ -477,10 +479,11 @@ int wldev_set_country(
 	wl_country_t cspec = {{0}, 0, {0}};
 	wl_country_t cur_cspec = {{0}, 0, {0}};	/* current ccode */
 	scb_val_t scbval;
-	char smbuf[WLC_IOCTL_SMLEN];
+#ifdef WL_CFG80211
 	struct wireless_dev *wdev = ndev_to_wdev(dev);
 	struct wiphy *wiphy = wdev->wiphy;
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
+#endif
 
 	if (!country_code)
 		return error;
@@ -495,7 +498,7 @@ int wldev_set_country(
 	cspec.rev = revinfo;
 	memcpy(cspec.country_abbrev, country_code, WLC_CNTRY_BUF_SZ);
 	memcpy(cspec.ccode, country_code, WLC_CNTRY_BUF_SZ);
-	error = dhd_conf_get_country_from_config(dhd_get_pub(dev), &cspec);
+	error = dhd_conf_map_country_list(dhd_get_pub(dev), &cspec);
 	if (error)
 		dhd_get_customized_country_code(dev, (char *)&cspec.country_abbrev, &cspec);
 
@@ -506,7 +509,11 @@ int wldev_set_country(
 		dhd_force_country_change(dev) ||
 	    (strncmp(cspec.ccode, cur_cspec.ccode, WLC_CNTRY_BUF_SZ) != 0)) {
 
-		if ((user_enforced) && (wl_get_drv_status(cfg, CONNECTED, dev))) {
+		if ((user_enforced)
+#ifdef WL_CFG80211
+			&& (wl_get_drv_status(cfg, CONNECTED, dev))
+#endif
+		) {
 			bzero(&scbval, sizeof(scb_val_t));
 			error = wldev_ioctl_set(dev, WLC_DISASSOC,
 			                        &scbval, sizeof(scb_val_t));
@@ -517,8 +524,7 @@ int wldev_set_country(
 			}
 		}
 
-		error = wldev_iovar_setbuf(dev, "country", &cspec, sizeof(cspec),
-			smbuf, sizeof(smbuf), NULL);
+		error = dhd_conf_set_country(dhd_get_pub(dev), &cspec);
 		if (error < 0) {
 			WLDEV_ERROR(("%s: set country for %s as %s rev %d failed\n",
 				__FUNCTION__, country_code, cspec.ccode, cspec.rev));
