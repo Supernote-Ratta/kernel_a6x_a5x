@@ -224,7 +224,7 @@ static irqreturn_t wacom_i2c_irq(int irq, void *dev_id)
 		ratta_set_pen_type(12);
 	else
 		/* G14 */
-		ratta_set_pen_type(26);
+		ratta_set_pen_type(14);
 
 	if (1 == exchange_x_y_flag) {
 		swap(x, y);
