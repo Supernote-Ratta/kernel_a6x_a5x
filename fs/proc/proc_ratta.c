@@ -227,7 +227,7 @@ static const struct file_operations sn_proc_fops = {
 
 static int pen_type_proc_show(struct seq_file *m, void *v)
 {
-	seq_printf(m, "%d\n", pen_type);
+	seq_printf(m, "G%d\n", pen_type);
 
 	return 0;
 }
