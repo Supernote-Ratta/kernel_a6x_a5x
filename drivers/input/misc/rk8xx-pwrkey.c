@@ -25,12 +25,41 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
+#include <linux/rk_keys.h>
 
 struct rk8xx_pwrkey {
 	struct rk808 *rk8xx;
 	struct input_dev *input_dev;
 	int report_key;
 };
+
+static struct input_dev *sinput_dev;
+
+void rk8xx_send_power_key(int state)
+{
+	if (!sinput_dev)
+		return;
+	if (state) {
+		input_report_key(sinput_dev, KEY_POWER, 1);
+		input_sync(sinput_dev);
+	} else {
+		input_report_key(sinput_dev, KEY_POWER, 0);
+		input_sync(sinput_dev);
+	}
+}
+EXPORT_SYMBOL(rk8xx_send_power_key);
+
+void rk8xx_send_wakeup_key(void)
+{
+	if (!sinput_dev)
+		return;
+
+	input_report_key(sinput_dev, KEY_WAKEUP, 1);
+	input_sync(sinput_dev);
+	input_report_key(sinput_dev, KEY_WAKEUP, 0);
+	input_sync(sinput_dev);
+}
+EXPORT_SYMBOL(rk8xx_send_wakeup_key);
 
 static irqreturn_t rk8xx_pwrkey_irq_falling(int irq, void *data)
 {
@@ -89,6 +118,8 @@ static int rk8xx_pwrkey_probe(struct platform_device *pdev)
 					BIT_MASK(pwrkey->report_key);
 	platform_set_drvdata(pdev, pwrkey);
 
+	sinput_dev = pwrkey->input_dev;
+
 	/* requeset rise and fall irqs */
 	rise_irq = platform_get_irq(pdev, 0);
 	if (rise_irq < 0) {
@@ -125,6 +156,7 @@ static int rk8xx_pwrkey_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Can't register power button: %d\n", err);
 		return err;
 	}
+	input_set_capability(pwrkey->input_dev, EV_KEY, KEY_WAKEUP);
 
 	return 0;
 }
