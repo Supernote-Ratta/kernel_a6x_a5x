@@ -35,7 +35,7 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"3.19"
+#define RKEBC_DRV_VERSION		"3.21"
 
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
@@ -54,10 +54,10 @@
 // ebc ioctl command
 #define GET_EBC_BUFFER (0x7000)
 #define SET_EBC_SEND_BUFFER (0x7001)
-#define GET_EBC_DRIVER_SN (0x7002)
+#define GET_EBC_CUR_BUFFER (0x7002)
 #define GET_EBC_BUFFER_INFO (0x7003)
-#define SET_EBC_AUTO_BG (0x7004)
-#define CLR_EBC_AUTO_BG (0x7005)
+#define GET_EBC_AUTO_OLD_BUFFER (0x7004)
+#define GET_EBC_AUTO_NEW_BUFFER (0x7005)
 #define SET_EBC_NOT_FULL_NUM (0x7006)
 #define ENABLE_EBC_OVERLAY (0x7007)
 #define DISABLE_EBC_OVERLAY (0x7008)
@@ -98,6 +98,9 @@ enum epd_refresh_mode {
 
 #define EBC_OFF      (0)
 #define EBC_ON        (1)
+#define EBC_FB_BLANK (2)
+#define EBC_FB_UNBLANK (3)
+
 struct logo_info
 {
 	int logo_pic_offset;
@@ -159,7 +162,8 @@ struct rk29_ebc_info{
 	int is_busy_now;
 	char frame_total;
 	char frame_bw_total;
-	short int auto_need_refresh;
+	int auto_need_refresh0;
+	int auto_need_refresh1;
 	int frame_left;
 	int ebc_send_count;
 	int ebc_mode;
