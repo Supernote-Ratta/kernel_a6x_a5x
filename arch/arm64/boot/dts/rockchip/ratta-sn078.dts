@@ -656,7 +656,7 @@
 			sleep_enter_current = <150>;
 			sleep_exit_current = <180>;
 			sleep_filter_current = <100>;
-			power_off_thresd = <3500>;
+			power_off_thresd = <3400>;
 			zero_algorithm_vol = <3950>;
 			max_soc_offset = <60>;
 			monitor_sec = <5>;
@@ -669,8 +669,8 @@
 		charger {
 			compatible = "rk817,charger";
 			min_input_voltage = <4500>;
-			max_input_current = <1500>;
-			max_chrg_current = <1500>;
+			max_input_current = <2000>;
+			max_chrg_current = <2000>;
 			max_chrg_voltage = <4350>;
 			chrg_term_mode = <0>;
 			chrg_finish_cur = <100>;
