@@ -100,6 +100,8 @@ struct wacom_i2c {
 	u8 data[WACOM_QUERY_SIZE];
 	bool prox;
 	int tool;
+	int reset_gpio;
+	int pwren_gpio;
 };
 int get_hid_desc(struct i2c_client *client,
 			      struct hid_descriptor *hid_desc)
@@ -398,7 +400,8 @@ static int wacom_i2c_probe(struct i2c_client *client,
 		dev_err(&client->dev, "Unable to get irq number for GPIO %d, error %d\n", irq_gpio, client->irq);
 		goto err_free_irq_gpio;
 	}
-
+	wac_i2c->pwren_gpio = pwren_gpio;
+	wac_i2c->reset_gpio = reset_gpio;
 	wac_i2c->features = &features;
 	wac_i2c->client = client;
 	wac_i2c->input = input;
@@ -496,16 +499,25 @@ static int wacom_i2c_remove(struct i2c_client *client)
 static int __maybe_unused wacom_i2c_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
+	struct wacom_i2c *wac_i2c = i2c_get_clientdata(client);
 
 	disable_irq(client->irq);
-
+	gpio_set_value(wac_i2c->reset_gpio, 0);
+	gpio_set_value(wac_i2c->pwren_gpio, 0);
 	return 0;
 }
 
 static int __maybe_unused wacom_i2c_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
+	struct wacom_i2c *wac_i2c = i2c_get_clientdata(client);
 
+	gpio_set_value(wac_i2c->pwren_gpio, 1);
+	msleep(100);
+	gpio_set_value(wac_i2c->reset_gpio, 0);
+	msleep(150);
+	gpio_set_value(wac_i2c->reset_gpio, 1);
+	msleep(50);
 	enable_irq(client->irq);
 
 	return 0;
