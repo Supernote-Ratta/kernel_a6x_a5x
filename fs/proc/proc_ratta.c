@@ -244,9 +244,63 @@ static const struct file_operations pen_type_proc_fops = {
 	.release	= single_release,
 };
 
+static int boot_mode_proc_show(struct seq_file *m, void *v)
+{
+	switch (bootmode) {
+	case RATTA_MODE_NORMAL:
+		seq_printf(m, "%s\n", "normal");
+		break;
+	case RATTA_MODE_FACTORY:
+		seq_printf(m, "%s\n", "factory");
+		break;
+	default:
+		seq_printf(m, "%s\n", "unknown");
+		break;
+	}
+
+	return 0;
+}
+
+static int boot_mode_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, boot_mode_proc_show, NULL);
+}
+
+static ssize_t boot_mode_proc_write(struct file *file, const char __user *buf,
+				    size_t count, loff_t *off)
+{
+	int ret;
+	char tmp[64];
+
+	memset(tmp, 0, sizeof(tmp));
+	ret = copy_from_user(tmp, buf, (count < sizeof(tmp)) ?
+			     count : sizeof(tmp) - 1);
+	if (ret) {
+		printk(KERN_ERR "Copy boot mode from user failed,%d\n", ret);
+		return 0;
+	}
+
+	spin_lock(&proc_mutex);
+	if (!strncmp(tmp, "normal", strlen("normal")))
+		bootmode = RATTA_MODE_NORMAL;
+	else if (!strncmp(tmp, "factory", strlen("factory")))
+		bootmode = RATTA_MODE_FACTORY;
+	spin_unlock(&proc_mutex);
+
+	return count;
+}
+
+static const struct file_operations boot_mode_proc_fops = {
+	.open		= boot_mode_proc_open,
+	.read		= seq_read,
+	.write		= boot_mode_proc_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 static int __init proc_ratta_init(void)
 {
-	struct proc_dir_entry *proc_ratta_root;
+	struct proc_dir_entry *proc_ratta_root, *tmp;
 
 	proc_ratta_root = proc_mkdir("ratta", NULL);
 	if (!proc_ratta_root) {
@@ -254,13 +308,28 @@ static int __init proc_ratta_init(void)
 		goto done;
 	}
 
-	proc_create("version", S_IRUSR | S_IRGRP | S_IROTH,
-		    proc_ratta_root, &version_proc_fops);
-	proc_create("aid", 0660, proc_ratta_root, &aid_proc_fops);
-	proc_create("usrkey", 0660, proc_ratta_root, &usrkey_proc_fops);
-	proc_create("said", 0660, proc_ratta_root, &said_proc_fops);
-	proc_create("sn", 0444, proc_ratta_root, &sn_proc_fops);
-	proc_create("pen_type", 0444, proc_ratta_root, &pen_type_proc_fops);
+	tmp = proc_create("version", S_IRUSR | S_IRGRP | S_IROTH,
+			  proc_ratta_root, &version_proc_fops);
+	if (!tmp)
+		printk(KERN_ERR "Create proc version failed\n");
+	tmp = proc_create("aid", 0660, proc_ratta_root, &aid_proc_fops);
+	if (!tmp)
+		printk(KERN_ERR "Create proc aid failed\n");
+	tmp = proc_create("usrkey", 0660, proc_ratta_root, &usrkey_proc_fops);
+	if (!tmp)
+		printk(KERN_ERR "Create proc usrkey failed\n");
+	tmp = proc_create("said", 0660, proc_ratta_root, &said_proc_fops);
+	if (!tmp)
+		printk(KERN_ERR "Create proc said failed\n");
+	tmp = proc_create("sn", 0444, proc_ratta_root, &sn_proc_fops);
+	if (!tmp)
+		printk(KERN_ERR "Create proc sn failed\n");
+	tmp = proc_create("pen_type", 0444, proc_ratta_root, &pen_type_proc_fops);
+	if (!tmp)
+		printk(KERN_ERR "Create proc pen_type failed\n");
+	tmp = proc_create("boot_mode", 0644, proc_ratta_root, &boot_mode_proc_fops);
+	if (!tmp)
+		printk(KERN_ERR "Create proc boot_mode failed\n");
 
 done:
 	return 0;
