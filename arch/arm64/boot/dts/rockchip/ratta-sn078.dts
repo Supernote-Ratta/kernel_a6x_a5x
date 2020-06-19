@@ -669,7 +669,7 @@
 		charger {
 			compatible = "rk817,charger";
 			min_input_voltage = <4500>;
-			max_input_current = <2000>;
+			max_input_current = <3000>;
 			max_chrg_current = <2000>;
 			max_chrg_voltage = <4350>;
 			chrg_term_mode = <0>;
