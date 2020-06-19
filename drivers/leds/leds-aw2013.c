@@ -269,6 +269,15 @@ static int aw_2013_check_chipid(struct aw2013_led *led)
 	}
 	return -1;
 }
+
+static void aw2013_shutdown(struct i2c_client *client)
+{
+	struct aw2013_led *led = i2c_get_clientdata(client);
+	mutex_lock(&led->lock);
+	aw2013_write(led, AW_REG_GLOBAL_CONTROL,0);
+	mutex_unlock(&led->lock);
+}
+
 #ifdef CONFIG_PM
 static int aw2013_led_suspend(struct device *dev)
 {
@@ -552,6 +561,7 @@ static struct of_device_id aw2013_match_table[] = {
 static struct i2c_driver aw2013_led_driver = {
 	.probe = aw2013_led_probe,
 	.remove = aw2013_led_remove,
+	.shutdown = aw2013_shutdown, 
 	.driver = {
 		.name = "aw2013_led",
 		.owner = THIS_MODULE,
