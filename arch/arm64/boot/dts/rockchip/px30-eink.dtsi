@@ -17,7 +17,7 @@
 		};
 
 		display_reserved: framebuffer@10000000 {
-			reg = <0x0 0x10000000 0x0 0x600000>;
+			reg = <0x0 0x10000000 0x0 0x800000>;
 			no-map;
 		};
 	};
