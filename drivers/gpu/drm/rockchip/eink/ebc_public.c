@@ -26,7 +26,7 @@ void ebc_io_ctl_hook(unsigned int cmd, struct ebc_buf_info *info)
 		 *   buf->win_x1, buf->win_x2,
 		 *   buf->win_y1, buf->win_y2,
 		 */
-		//printk(KERN_DEBUG "%s: mode = %d, x1=%d, y1=%d, x2=%d, y2=%d\n", __func__, info->epd_mode, info->win_x1, info->win_y1, info->win_x2, info->win_y2);
+		printk("%s: mode = %d, x1=%d, y1=%d, x2=%d, y2=%d\n", __func__, info->epd_mode, info->win_x1, info->win_y1, info->win_x2, info->win_y2);
 		break;
 	default:
 		break;
