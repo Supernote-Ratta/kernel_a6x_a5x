@@ -13,6 +13,7 @@
 
 static int bootmode = 0;
 static int volatile pen_type = 0;
+static int volatile raw_pen_type = 0;
 static DEFINE_SPINLOCK(proc_mutex);
 
 static int version_proc_show(struct seq_file *m, void *v)
@@ -244,6 +245,25 @@ static const struct file_operations pen_type_proc_fops = {
 	.release	= single_release,
 };
 
+static int raw_pen_type_proc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "0x%02x\n", (unsigned char)raw_pen_type);
+
+	return 0;
+}
+
+static int raw_pen_type_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, raw_pen_type_proc_show, NULL);
+}
+
+static const struct file_operations raw_pen_type_proc_fops = {
+	.open		= raw_pen_type_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 static int boot_mode_proc_show(struct seq_file *m, void *v)
 {
 	switch (bootmode) {
@@ -327,6 +347,9 @@ static int __init proc_ratta_init(void)
 	tmp = proc_create("pen_type", 0444, proc_ratta_root, &pen_type_proc_fops);
 	if (!tmp)
 		printk(KERN_ERR "Create proc pen_type failed\n");
+	tmp = proc_create("raw_pen_type", 0444, proc_ratta_root, &raw_pen_type_proc_fops);
+	if (!tmp)
+		printk(KERN_ERR "Create proc raw_pen_type failed\n");
 	tmp = proc_create("boot_mode", 0644, proc_ratta_root, &boot_mode_proc_fops);
 	if (!tmp)
 		printk(KERN_ERR "Create proc boot_mode failed\n");
@@ -346,6 +369,14 @@ void ratta_set_pen_type(int pen)
 	spin_lock(&proc_mutex);
 	if (pen_type != pen)
 		pen_type = pen;
+	spin_unlock(&proc_mutex);
+}
+
+void ratta_set_raw_pen_type(int pen)
+{
+	spin_lock(&proc_mutex);
+	if (raw_pen_type != pen)
+		raw_pen_type = pen;
 	spin_unlock(&proc_mutex);
 }
 
