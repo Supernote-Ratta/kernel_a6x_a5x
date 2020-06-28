@@ -221,6 +221,7 @@ static irqreturn_t wacom_i2c_irq(int irq, void *dev_id)
 
 	wac_i2c->prox = data[3] & 0x20;
 
+	ratta_set_raw_pen_type(data[2]);
 	if (data[2] == 2)
 		/* G12 */
 		ratta_set_pen_type(12);
