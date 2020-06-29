@@ -137,6 +137,7 @@
 		 * - PDN (power down when low)
 		 */
 		reset-gpios = <&gpio0 RK_PA2 GPIO_ACTIVE_LOW>; /* GPIO3_A4 */
+		post-power-on-delay-ms = <220>;
 	};
 
 	vcc5v0_sys: vccsys {
