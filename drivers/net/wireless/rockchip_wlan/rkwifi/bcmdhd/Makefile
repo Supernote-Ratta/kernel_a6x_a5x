@@ -28,7 +28,7 @@ DHDCFLAGS = -Wall -Wstrict-prototypes -Dlinux -DBCMDRIVER                 \
 	-Idrivers/net/wireless/rockchip_wlan/rkwifi/bcmdhd \
 	-Idrivers/net/wireless/rockchip_wlan/rkwifi/bcmdhd/include
 
-DHDCFLAGS += -DDHD_8021X_DUMP -DDHD_DHCP_DUMP -DDHD_ICMP_DUMP -DDHD_ARP_DUMP -DBUS_POWER_RESTORE
+DHDCFLAGS += -DDHD_8021X_DUMP -DDHD_DHCP_DUMP -DDHD_ICMP_DUMP -DDHD_ARP_DUMP
 
 DHDOFILES = aiutils.o siutils.o sbutils.o bcmutils.o bcmwifi_channels.o   \
 	dhd_linux.o dhd_linux_platdev.o dhd_linux_sched.o dhd_pno.o           \
