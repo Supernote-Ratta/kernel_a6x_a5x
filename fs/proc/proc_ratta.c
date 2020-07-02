@@ -15,6 +15,7 @@ static int bootmode = 0;
 static int volatile pen_type = 0;
 static int volatile raw_pen_type = 0;
 static DEFINE_SPINLOCK(proc_mutex);
+static DEFINE_MUTEX(aid_mutex);
 
 static int version_proc_show(struct seq_file *m, void *v)
 {
@@ -43,18 +44,25 @@ static int aid_common_write(const char __user *buf, size_t count, int id)
 	if (!is_rk_vendor_ready())
 		return -ENODEV;
 
+	mutex_lock(&aid_mutex);
+
 	memset(aid_str, 0, sizeof(aid_str));
 	rk_vendor_read(id, aid_str, sizeof(aid_str) - 1);
 	if ((strlen(aid_str) == 16) ||
 	    (strlen(aid_str) == 32) ||
-	    (strlen(aid_str) == 64))
+	    (strlen(aid_str) == 64)) {
+		mutex_unlock(&aid_mutex);
+
 		return 0;
+	}
 
 	memset(aid_str, 0, sizeof(aid_str));
 	ret = copy_from_user(aid_str, buf, (count < sizeof(aid_str)) ?
 			     count : sizeof(aid_str) - 1);
 	if (ret) {
+		mutex_unlock(&aid_mutex);
 		printk(KERN_ERR "copy aid(%d) from user failed,%d\n", id, ret);
+
 		return ret;
 	}
 
@@ -73,17 +81,25 @@ static int aid_common_write(const char __user *buf, size_t count, int id)
 		*tmp = 0;
 	if ((strlen(pstr) != 16) &&
 	    (strlen(pstr) != 32) &&
-	    (strlen(pstr) != 64))
+	    (strlen(pstr) != 64)) {
+		mutex_unlock(&aid_mutex);
+
 		return -EINVAL;
+	}
 
 	for (i = 0; i < strlen(pstr); i++) {
 		if (!(((pstr[i] <= '9') && (pstr[i] >= '0')) ||
 		    ((pstr[i] <= 'f') && (pstr[i] >= 'a')) ||
-		    ((pstr[i] <= 'F') && (pstr[i] >= 'A'))))
+		    ((pstr[i] <= 'F') && (pstr[i] >= 'A')))) {
+			mutex_unlock(&aid_mutex);
+
 			return -EINVAL;
+		}
 	}
 
 	rk_vendor_write(id, pstr, strlen(pstr));
+
+	mutex_unlock(&aid_mutex);
 
 	return 0;
 }
