@@ -170,7 +170,8 @@ struct rk29_ebc_info{
 	int  buffer_need_check;
 	int bits_per_pixel;
 	int ebc_irq_status;
-	int ebc_auto_work;
+	int ebc_auto_work_done;
+	int ebc_auto_work_done1;
 	int ebc_dsp_buf_status;// 1:have display buffer 0:no display buffer
 	struct device *dev;
 	struct fb_info *ebc_fb;
