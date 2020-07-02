@@ -35,8 +35,6 @@
 #include "tcon.h"
 #include "panel.h"
 
-#define RKEBC_DRV_VERSION		"3.22"
-
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
 
@@ -51,19 +49,20 @@
 #define END_RESET			(0)
 #define END_PICTURE			(1)
 
-// ebc ioctl command
+//ebc system ioctl command
 #define GET_EBC_BUFFER (0x7000)
 #define SET_EBC_SEND_BUFFER (0x7001)
-#define GET_EBC_CUR_BUFFER (0x7002)
 #define GET_EBC_BUFFER_INFO (0x7003)
-#define GET_EBC_AUTO_OLD_BUFFER (0x7004)
-#define GET_EBC_AUTO_NEW_BUFFER (0x7005)
 #define SET_EBC_NOT_FULL_NUM (0x7006)
 #define ENABLE_EBC_OVERLAY (0x7007)
 #define DISABLE_EBC_OVERLAY (0x7008)
 
-#define EBC_DRIVER_SN "RK29_EBC_DRIVER_VERSION_1.00"
-#define EBC_DRIVER_SN_LEN sizeof(EBC_DRIVER_SN)
+//ebc debug ioctl command
+#define GET_EBC_CUR_BUFFER (0x7002)
+#define GET_EBC_AUTO_OLD_BUFFER (0x7004)
+#define GET_EBC_AUTO_NEW_BUFFER (0x7005)
+#define GET_EBC_AUTO_BG_BUFFER (0x7009)
+#define GET_EBC_AUTO_CUR_BUFFER (0x700a)
 
 #define ebc_printk(dir_of_file,lev,fmt) ebc_dbg_printk(dir_of_file,lev,fmt)
 
@@ -151,13 +150,6 @@ struct ebc_buf_info{
 	int rotate;
 }__packed;
 
-// ebc sn
-struct ebc_sn_info{
-	u32 key;
-	u32 sn_len;
-	char cip_sn[EBC_DRIVER_SN_LEN];
-};
-
 struct rk29_ebc_info{
 	int is_busy_now;
 	int task_restart;
@@ -193,7 +185,8 @@ struct rk29_ebc_info{
 	int    *auto_image_new;
 	int    *auto_image_old;
 	int    *auto_image_bg;
-	char   *auto_frame_buffer;
+	int    *auto_image_cur;
+	u8   *auto_frame_buffer;
 	int   	*auto_image_fb;
 	void *auto_direct_buffer[EINK_FB_NUM];
 	int not_fullmode_num;
@@ -229,8 +222,6 @@ struct rk29_ebc_info{
 	/*deep sleep*/
 	int is_deep_sleep;
 
-	/* auto bg update */
-	int auto_bg_update;
 	int overlay_enable;
 	int overlay_start;
 };
