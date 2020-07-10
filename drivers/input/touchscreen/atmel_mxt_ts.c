@@ -1082,7 +1082,7 @@ static void adjust_cursor_accuracy(struct mxt_data *data, u16 *x, u16 *y)
 	if ( *y >  Y_HALF )  { //1872/2
 		*y = *y - (*y - Y_HALF) * Y_ADJUST_BOTTOM / 93;
 	}
-#if 0
+#if 1 
 	 else{
 	 *y = *y + (Y_HALF - *y) * Y_ADJUST_TOP / 93;
 	 }
