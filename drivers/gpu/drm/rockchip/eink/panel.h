@@ -21,6 +21,8 @@ struct eink_panel {
 	u32 vir_height;
 	u32 fb_width;
 	u32 fb_height;
+	u32 width_mm;
+	u32 height_mm;
 
 	u32 sdck;
 	u32 pixels_per_sdck;

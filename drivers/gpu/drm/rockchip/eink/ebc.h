@@ -148,6 +148,8 @@ struct ebc_buf_info{
 	int win_x2;
 	int win_y2;
 	int rotate;
+	int width_mm;
+	int height_mm;
 }__packed;
 
 struct rk29_ebc_info{
