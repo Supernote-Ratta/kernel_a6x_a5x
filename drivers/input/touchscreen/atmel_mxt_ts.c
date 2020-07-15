@@ -1073,6 +1073,7 @@ static void mxt_proc_t9_message(struct mxt_data *data, u8 *message)
 #define Y_HALF 936  //1872/2
 #define Y_ADJUST_TOP 3 
 #define Y_ADJUST_BOTTOM 3
+#define X_ADJUST  3
 static void adjust_cursor_accuracy(struct mxt_data *data, u16 *x, u16 *y)
 {
 	struct device *dev = &data->client->dev;
@@ -1090,7 +1091,7 @@ static void adjust_cursor_accuracy(struct mxt_data *data, u16 *x, u16 *y)
 
 	/* x zoom out */
 	if (*x>10 && *x < data->max_x )
-		*x = *x + (1400 - *x) * 3/140;
+		*x = *x + (1400 - *x) * X_ADJUST /140;
 	dev_dbg(dev, "y_current=%d,x=%d\n",*y,*x);
 }
 #endif
@@ -1234,7 +1235,7 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 			id, type, x, y, major, pressure, orientation);
 
 		input_mt_report_slot_state(input_dev, tool, 1);
-		input_report_abs(input_dev, ABS_MT_POSITION_Y, temp_y);
+		input_report_abs(input_dev, ABS_MT_POSITION_Y, data->max_x-x);
 		input_report_abs(input_dev, ABS_MT_POSITION_X, y);
 		input_report_abs(input_dev, ABS_MT_TOUCH_MAJOR, major);
 		input_report_abs(input_dev, ABS_MT_PRESSURE, pressure);
