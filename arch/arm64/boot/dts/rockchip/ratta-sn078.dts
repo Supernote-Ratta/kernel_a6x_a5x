@@ -729,7 +729,7 @@
 		reg = <0x24>;
 		/*interrupts = <GIC_SPI 7 IRQ_TYPE_LEVEL_HIGH>;*/
 		cy,adapter_id = "cyttsp5_i2c_adapter";
-		status = "disabled";
+		status = "okay";
 		pinctrl-names = "default";
 		pinctrl-0 = <&cyttsp_gpio>;
 		
