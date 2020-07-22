@@ -348,6 +348,11 @@
 		rockchip,baudrate = <115200>;  /* Only 115200 and 1500000 */
 };
 
+&ddr_timing {
+	lpddr3_odt_dis_freq = <100>;
+	phy_lpddr3_odt_dis_freq = <100>;
+};
+
 &dfi {
 	status = "okay";
 };
