@@ -247,6 +247,7 @@ static void __pass_event(struct evdev_client *client,
 		client->buffer[client->tail].value = 0;
 
 		client->packet_head = client->tail;
+		pr_info("SYN_DROPPED\n");
 	}
 
 	if (event->type == EV_SYN && event->code == SYN_REPORT) {
