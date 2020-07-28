@@ -1221,11 +1221,11 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 	else
 		ratta_mt_record(id, 0, 0, false);
 
+	input_mt_slot(input_dev, id);
+
 	if ((temp_y < 0) &&
 	    (ratta_get_bootmode() != RATTA_MODE_FACTORY))
-		return;
-
-	input_mt_slot(input_dev, id);
+		active = false ;
 
 	if (active) {
 #ifdef CONFIG_RATTA_CTP_ATMEL_ACCURACY_ADJ
