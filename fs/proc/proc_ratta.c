@@ -9,7 +9,7 @@
 
 #include <linux/proc_ratta.h>
 
-#define RATTA_KERNEL_VERSION "debug-20200727a"
+#define RATTA_KERNEL_VERSION "debug-20200728a"
 
 static int bootmode = 0;
 static int volatile pen_type = 0;
