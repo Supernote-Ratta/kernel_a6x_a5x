@@ -2570,15 +2570,15 @@ static int mxt_initialize_input_device(struct mxt_data *data)
 		return -EINVAL;
 	}
 
-	/* Handle default values and orientation switch */
-	if (data->max_x == 0)
-		data->max_x = 1023;
-
-	if (data->max_y == 0)
-		data->max_y = 1023;
-
 	if (data->xy_switch)
 		swap(data->max_x, data->max_y);
+
+	/* Handle default values and orientation switch */
+	if (data->max_x == 0)
+		data->max_x = 1400;
+
+	if (data->max_y == 0)
+		data->max_y = 1871;
 
 	dev_info(dev, "Touchscreen size X%uY%u\n", data->max_x, data->max_y);
 
