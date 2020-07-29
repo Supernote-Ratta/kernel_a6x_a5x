@@ -2768,7 +2768,7 @@ static int mxt_initialize(struct mxt_data *data)
 		goto err_free_object_table;
 
 	if (data->cfg_name) {
-		error = request_firmware_nowait(THIS_MODULE, true,
+		error = request_firmware_nowait(THIS_MODULE, false,
 					data->cfg_name, &data->client->dev,
 					GFP_KERNEL, data, mxt_config_cb);
 		if (error) {
