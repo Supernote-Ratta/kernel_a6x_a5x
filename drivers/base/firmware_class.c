@@ -1156,14 +1156,10 @@ _request_firmware(const struct firmware **firmware_p, const char *name,
 
 	ret = fw_get_filesystem_firmware(device, fw->priv);
 	if (ret) {
-		if (!(opt_flags & FW_OPT_NO_WARN)) {
+		if (!(opt_flags & FW_OPT_NO_WARN))
 			dev_warn(device,
 				 "Direct firmware load for %s failed with error %d\n",
 				 name, ret);
-			if (!strcmp(name, "maxtouch.cfg")) {
-				dump_stack();
-			}
-		}
 		if (opt_flags & FW_OPT_USERHELPER) {
 			dev_warn(device, "Falling back to user helper\n");
 			ret = fw_load_from_user_helper(fw, name, device,
