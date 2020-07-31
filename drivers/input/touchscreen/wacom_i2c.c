@@ -412,6 +412,7 @@ static int wacom_i2c_probe(struct i2c_client *client,
 	input->id.vendor = 0x56a;
 	//input->id.version = features.fw_version;
 	input->id.version = hid_desc.wVersion;
+	input->hint_events_per_packet = 8192;
 
 	input->dev.parent = &client->dev;
 	input->open = wacom_i2c_open;
