@@ -338,6 +338,8 @@ static int __init proc_ratta_init(void)
 {
 	struct proc_dir_entry *proc_ratta_root, *tmp;
 
+	printk(KERN_INFO "Ratta kernel version: %s\n", RATTA_KERNEL_VERSION);
+
 	proc_ratta_root = proc_mkdir("ratta", NULL);
 	if (!proc_ratta_root) {
 		printk(KERN_ERR "create ratta proc dir failed\n");
