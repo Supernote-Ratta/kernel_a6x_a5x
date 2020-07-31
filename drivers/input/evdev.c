@@ -503,6 +503,9 @@ static int evdev_open(struct inode *inode, struct file *file)
 	struct evdev_client *client;
 	int error;
 
+	if (size >= (2 * 1024 * 1024))
+		pr_warn("Really a big client.\n");
+
 	client = kzalloc(size, GFP_KERNEL | __GFP_NOWARN);
 	if (!client)
 		client = vzalloc(size);
