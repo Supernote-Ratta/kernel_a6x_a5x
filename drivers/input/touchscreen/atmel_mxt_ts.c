@@ -360,6 +360,14 @@ struct mxt_data {
 	bool updating_config;
 };
 
+extern int register_wacom_touch_event_notifier(struct notifier_block*);
+extern int unregister_wacom_touch_event_notifier(struct notifier_block*);
+static int wacom_touch_event(struct notifier_block *, unsigned long, void *);
+static struct notifier_block wacom_touch_event_notifier = {
+	.notifier_call = wacom_touch_event,
+};
+static struct i2c_client *g_client = NULL;
+
 static size_t mxt_obj_size(const struct mxt_object *obj)
 {
 	return obj->size_minus_one + 1;
@@ -3833,6 +3841,11 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		 kobject_name(&client->dev.kobj));
 	proc_symlink("ratta/cap_fw_version", NULL, buf);
 
+	g_client = client;
+	error = register_wacom_touch_event_notifier(&wacom_touch_event_notifier);
+	if (error)
+		dev_err(&client->dev, "Register wacom notifier failed,%d\n", error);
+
 	return 0;
 
 err_free_irq:
@@ -3847,6 +3860,8 @@ static int mxt_remove(struct i2c_client *client)
 {
 	struct mxt_data *data = i2c_get_clientdata(client);
 
+	unregister_wacom_touch_event_notifier(&wacom_touch_event_notifier);
+	g_client = NULL;
         ratta_mt_remove();
 	sysfs_remove_group(&client->dev.kobj, &mxt_fw_attr_group);
 	mxt_debug_msg_remove(data);
@@ -3919,6 +3934,24 @@ static int __maybe_unused mxt_resume(struct device *dev)
 }
 
 static SIMPLE_DEV_PM_OPS(mxt_pm_ops, mxt_suspend, mxt_resume);
+
+static int wacom_touch_event(struct notifier_block *this, unsigned long event, void *ptr)
+{
+	if (!g_client) {
+		printk(KERN_ERR "Wacom touch event callback too early!\n");
+		return 0;
+	}
+
+	if (event == 1) {
+		mxt_suspend(&g_client->dev);
+		dev_info(&g_client->dev, "Disabled by wacom.\n");
+	} else {
+		mxt_resume(&g_client->dev);
+		dev_info(&g_client->dev, "Enabled by wacom.\n");
+	}
+
+	return 0;
+}
 
 static const struct of_device_id mxt_of_match[] = {
 	{ .compatible = "atmel,maxtouch", },
