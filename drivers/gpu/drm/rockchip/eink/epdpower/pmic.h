@@ -154,6 +154,5 @@ extern void pmic_pm_resume(struct pmic_sess *sess);
 
 int tps65185_vcom_get(void);
 int tps65185_vcom_set(int vcom_mv);
-int vcom_check(void);
 
 #endif  /* PMIC_H */

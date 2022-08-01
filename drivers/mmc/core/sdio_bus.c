@@ -59,11 +59,21 @@ static ssize_t modalias_show(struct device *dev, struct device_attribute *attr, 
 }
 static DEVICE_ATTR_RO(modalias);
 
+//=========================add by May===================================//
+extern int cis_chipvendor;
+static ssize_t module_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "0x%04X\n", cis_chipvendor);
+}
+static DEVICE_ATTR_RO(module);
+//======================================================================//
+
 static struct attribute *sdio_dev_attrs[] = {
 	&dev_attr_class.attr,
 	&dev_attr_vendor.attr,
 	&dev_attr_device.attr,
 	&dev_attr_modalias.attr,
+	&dev_attr_module.attr,   //add by May
 	NULL,
 };
 ATTRIBUTE_GROUPS(sdio_dev);

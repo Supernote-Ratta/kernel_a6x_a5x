@@ -571,7 +571,6 @@
 	ft5x26: ft5x26@38 {
 		compatible = "focaltech,ft5x26";
 		reg = <0x38>;
-		ft5x26-supply = <&vcc3v3_sys>;
 		gpio_intr = <&gpio0 RK_PA5 GPIO_ACTIVE_HIGH>;   //gpio0_a5
 		gpio_rst = <&gpio0 RK_PB4 GPIO_ACTIVE_HIGH>;    //gpio0_b4		
 		//gpio_full_led = <&gpio5 4 GPIO_ACTIVE_LOW>;

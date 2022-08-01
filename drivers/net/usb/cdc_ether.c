@@ -452,6 +452,16 @@ static const struct driver_info wwan_info = {
 	.manage_power =	usbnet_manage_power,
 };
 
+static const struct driver_info lte_info = {
+	.description =  "CDC Ethernet Device(lte)",
+	.flags =	FLAG_ETHER | FLAG_POINTTOPOINT | FLAG_LTE,
+	.bind =		usbnet_cdc_bind,
+	.unbind =	usbnet_cdc_unbind,
+	.status =	usbnet_cdc_status,
+	.set_rx_mode =	usbnet_cdc_update_filter,
+	.manage_power =	usbnet_manage_power,
+};
+
 /*-------------------------------------------------------------------------*/
 
 #define HUAWEI_VENDOR_ID	0x12D1

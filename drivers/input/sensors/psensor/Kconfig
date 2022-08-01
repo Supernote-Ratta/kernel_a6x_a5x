@@ -25,5 +25,9 @@ config PS_STK3410
 	bool "proximity sensor stk3410"
 	default n
 
+config PS_EM20918
+    bool "psensor em20918(or em30918)"
+    default n
+
 endif
 

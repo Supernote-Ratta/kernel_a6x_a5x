@@ -53,7 +53,7 @@ struct ebc_buf_s{
 
 buf_int ebc_buf_release(struct ebc_buf_s *release_buf);
 buf_int ebc_remove_from_dsp_buf_list(struct ebc_buf_s *remove_buf);
-buf_int ebc_add_to_dsp_buf_list(struct ebc_buf_s  *dsp_buf, int add_direct);
+buf_int ebc_add_to_dsp_buf_list(struct ebc_buf_s  *dsp_buf);
 buf_int ebc_get_dsp_list_enum_num(void);
 struct ebc_buf_s *ebc_dsp_buf_get(void);
 struct ebc_buf_s *ebc_find_buf_by_phy_addr(buf_char *phy_addr);

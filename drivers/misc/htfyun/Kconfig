@@ -1,0 +1,22 @@
+#
+# htfyun misc driver configuration
+#
+menuconfig HTFYUN_MISC_SUPPORT
+    bool "htfyun misc support"
+    help
+      Say Y here, and a list of supported htfyun misc will be displayed.
+      This option doesn't affect the kernel.
+
+if HTFYUN_MISC_SUPPORT
+
+config HALL_GPIO
+    bool "Hall sensor observe for its action is like headset"
+    default n
+
+config HTFYUN_HEADSET
+	bool "HTFYUN adc-gpio headset detect"
+	default y
+	help
+		This supports the use of the ADC interface on RK processors.
+
+endif

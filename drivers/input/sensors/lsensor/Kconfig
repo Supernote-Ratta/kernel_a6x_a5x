@@ -48,5 +48,9 @@ config LS_STK3410
 	bool "light sensor stk3410"
 	default n
 
+config LS_EM20918
+    bool "light sensor em20918(or em30918)"
+    default n
+
 endif
 

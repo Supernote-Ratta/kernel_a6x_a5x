@@ -27,6 +27,8 @@
 #include <linux/math64.h>
 #include <linux/reboot.h>
 #include <linux/delay.h>
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 
 
 /* Register Map */
@@ -82,6 +84,7 @@ enum {
 /* Constants */
 #define WAIT_TIMEOUT      1000 /* ms */
 #define DEFAULT_SCL_RATE  (100 * 1000) /* Hz */
+extern bool fb_power_off( void );
 
 /**
  * struct i2c_spec_values:
@@ -198,7 +201,8 @@ struct rk3x_i2c {
 	struct i2c_adapter adap;
 	struct device *dev;
 	struct rk3x_i2c_soc_data *soc_data;
-
+    int           bus_nr;
+    
 	/* Hardware resources */
 	void __iomem *regs;
 	struct clk *clk;
@@ -226,6 +230,8 @@ struct rk3x_i2c {
 	unsigned int suspended:1;
 
 	struct notifier_block i2c_restart_nb;
+	int 	power_gpio;
+	bool	keep_power_on; 	
 };
 
 static inline void i2c_writel(struct rk3x_i2c *i2c, u32 value,
@@ -276,6 +282,13 @@ static void rk3x_i2c_stop(struct rk3x_i2c *i2c, int error)
 	i2c->processed = 0;
 	i2c->msg = NULL;
 	i2c->error = error;
+
+	if( error ) { // 20191005,hsl add.
+	    u32 waddr = i2c_readl(i2c, REG_MRXADDR) & 0xff;
+	    u32 raddr = i2c_readl(i2c, REG_MRXRADDR) & 0xff;
+		dev_err(i2c->dev, "rk3x_i2c_stop with Error: %d(NAKRCV=-6),waddr=0x%02x,raddr=0x%02x\n", 
+		    error, waddr, raddr);
+	}
 
 	if (i2c->is_last_msg) {
 		/* Enable stop interrupt */
@@ -1156,6 +1169,12 @@ static int rk3x_i2c_restart_notify(struct notifier_block *this,
 	return NOTIFY_DONE;
 }
 
+// 20210805：用于兼容 4G 设置。
+__weak bool lte_keep_active_when_suspend(void) 
+{
+	return false;
+}
+
 static __maybe_unused int rk3x_i2c_suspend_noirq(struct device *dev)
 {
 	struct rk3x_i2c *i2c = dev_get_drvdata(dev);
@@ -1167,6 +1186,14 @@ static __maybe_unused int rk3x_i2c_suspend_noirq(struct device *dev)
 	 *
 	 * So forbid access to I2C device using i2c->suspended flag.
 	 */
+	 if(fb_power_off()) {
+	 	//20210805: 此处暂时不关闭 1.8V GPIO的电源，用来测试休眠时候 4G 保持在网的状态。
+	 	// -- 增加了一个 weak 函数来做这个判断。
+		if(gpio_is_valid(i2c->power_gpio) && !i2c->keep_power_on && !lte_keep_active_when_suspend() ){
+			printk("===rk3x_i2c_suspend_noirq: i2c->power_gpio=%d\n",i2c->power_gpio);
+	        gpio_direction_output(i2c->power_gpio,0);
+	    }
+	 }
 	i2c_lock_adapter(&i2c->adap);
 	i2c->suspended = 1;
 	i2c_unlock_adapter(&i2c->adap);
@@ -1181,6 +1208,12 @@ static __maybe_unused int rk3x_i2c_resume_noirq(struct device *dev)
 	rk3x_i2c_adapt_div(i2c, clk_get_rate(i2c->clk));
 
 	/* Allow access to I2C bus */
+	if(fb_power_off()) {
+		if( gpio_is_valid(i2c->power_gpio) && !i2c->keep_power_on && !lte_keep_active_when_suspend() ){
+			printk("===rk3x_i2c_resume_noirq: set 1 to i2c->power_gpio\n");
+	        gpio_direction_output(i2c->power_gpio,1);
+	    }
+	}
 	i2c_lock_adapter(&i2c->adap);
 	i2c->suspended = 0;
 	i2c_unlock_adapter(&i2c->adap);
@@ -1253,6 +1286,77 @@ static const struct of_device_id rk3x_i2c_match[] = {
 };
 MODULE_DEVICE_TABLE(of, rk3x_i2c_match);
 
+// 20210530: cat /sys/devices/platform/ff190000.i2c/dbg      
+static ssize_t rk3x_i2c_dbg_read(struct device *device,
+				     struct device_attribute *attr,
+				     char *buf)
+{
+    struct platform_device *adapter = to_platform_device(device);
+    struct rk3x_i2c *i2c = platform_get_drvdata(adapter);
+    struct i2c_timings *t = &i2c->t;
+    u32 val = i2c_readl(i2c, REG_CLKDIV);
+    unsigned long clk_rate = clk_get_rate(i2c->clk);
+	return sprintf(buf,"%s[%d]:clk=%dHZ,clk_div H=%d,L=%d,pll clk_rate=%ld\n", 
+	    i2c->adap.name, i2c->bus_nr,
+	    t->bus_freq_hz, (val>>16), (val&0XFFFF), clk_rate);
+}
+
+
+// 20210530: ���� I2C-CLK�� 180KHZ: echo 180 > /sys/devices/platform/ff190000.i2c/dbg 
+// ���� I2C-CLK�� 267890HZ: echo 1,267890 > /sys/devices/platform/ff190000.i2c/dbg 
+static ssize_t rk3x_i2c_dbg_write(struct device *device,
+       struct device_attribute *attr,
+       const char *buf, size_t count)
+{
+    struct platform_device *adapter = to_platform_device(device);
+    struct rk3x_i2c *i2c = platform_get_drvdata(adapter);
+    struct i2c_timings *t = &i2c->t;
+	int 		ret = 0;
+    int 		op, param = 0; // default is 0.
+    unsigned long clk_rate;
+    u32         val;
+    u32         old_hz = t->bus_freq_hz;
+
+    ret = sscanf(buf, "%d,%d", &op,&param);
+    if( ret < 1 ){
+        return -EINVAL;
+    }
+    
+    if(ret == 1) { // default is 1: set i2c clk by KHZ.
+        param = op;
+        op = 0;
+    }
+    switch(op) {
+        case 0: // set i2c clk(KHZ)
+            t->bus_freq_hz = param * 1000;
+            break;  // fall down.
+        case 1: // set i2c clk(HZ)
+            t->bus_freq_hz = param;
+    	    break;
+        break;
+        default:
+        return -EINVAL;
+        break;
+    }
+    if(old_hz != t->bus_freq_hz) {
+        clk_rate = clk_get_rate(i2c->clk);
+        rk3x_i2c_adapt_div(i2c, clk_rate);
+        val = i2c_readl(i2c, REG_CLKDIV);
+        printk("Set %s CLK from %dHz to %dHZ,PLL clk_rate=%ld,clk div H=%d,L=%d\n", i2c->adap.name, 
+            old_hz, t->bus_freq_hz,
+            clk_rate, (val>>16), (val&0XFFFF));
+    }
+    
+    return count;
+}
+static DEVICE_ATTR(dbg, S_IRUGO | S_IWUSR, rk3x_i2c_dbg_read,
+      rk3x_i2c_dbg_write);
+
+static int rk3x_i2c_dbg_init(struct platform_device *pdev)
+{
+    return device_create_file(&pdev->dev, &dev_attr_dbg);
+}
+
 static int rk3x_i2c_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
@@ -1262,7 +1366,7 @@ static int rk3x_i2c_probe(struct platform_device *pdev)
 	int ret = 0;
 	int bus_nr;
 	u32 value;
-	int irq;
+	int irq,powergpio;
 	unsigned long clk_rate;
 
 	i2c = devm_kzalloc(&pdev->dev, sizeof(struct rk3x_i2c), GFP_KERNEL);
@@ -1333,6 +1437,23 @@ static int rk3x_i2c_probe(struct platform_device *pdev)
 		}
 	}
 
+	//tanlq add for i2c1 need power control
+	powergpio = of_get_named_gpio(np, "power-gpio", 0);
+	if (!gpio_is_valid(powergpio)) {
+		dev_err(i2c->dev, "no power_gpio pin available\n");
+		i2c->power_gpio = -1;
+	}else{
+		ret = devm_gpio_request_one(i2c->dev, powergpio, GPIOF_OUT_INIT_HIGH, "i2c-pw");
+		if (ret < 0) {
+			dev_err(i2c->dev, "devm_gpio_request_one i2c-pw Failed\n");
+		}
+		gpio_direction_output(powergpio, 1);
+		i2c->power_gpio = powergpio;
+		i2c->keep_power_on = !!of_get_property(np, "keep-power-on", NULL);
+		printk("rk3x_i2c_probe,power-gpio=%d,keep-power-on=%d\n",
+			i2c->power_gpio, i2c->keep_power_on);
+	}
+
 	/* IRQ setup */
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
@@ -1398,7 +1519,9 @@ static int rk3x_i2c_probe(struct platform_device *pdev)
 		goto err_clk_notifier;
 	}
 
-	dev_info(&pdev->dev, "Initialized RK3xxx I2C bus at %p\n", i2c->regs);
+    i2c->bus_nr = bus_nr;
+    rk3x_i2c_dbg_init(pdev);
+	dev_info(&pdev->dev, "Initialized RK3xxx I2C bus[%d] at %p\n", bus_nr, i2c->regs);
 
 	return 0;
 
@@ -1419,6 +1542,11 @@ static int rk3x_i2c_remove(struct platform_device *pdev)
 
 	clk_notifier_unregister(i2c->clk, &i2c->clk_rate_nb);
 	unregister_i2c_restart_handler(&i2c->i2c_restart_nb);
+	if( gpio_is_valid(i2c->power_gpio) ){
+		printk("===rk3x_i2c_remove: i2c->power_gpio\n");
+        gpio_direction_output(i2c->power_gpio,0);
+    }
+
 	clk_unprepare(i2c->pclk);
 	clk_unprepare(i2c->clk);
 

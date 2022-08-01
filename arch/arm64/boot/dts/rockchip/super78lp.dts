@@ -1,0 +1,1540 @@
+/*
+ * Copyright (c) 2017 Fuzhou Rockchip Electronics Co., Ltd
+ *
+ * SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+ */
+
+/dts-v1/;
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/display/drm_mipi_dsi.h>
+#include <dt-bindings/sensor-dev.h>
+#include "px30.dtsi"
+#include "px30-android.dtsi"
+#include "px30-eink.dtsi"
+
+//---------------------EINK PANEL------------------------
+//#define ES103		//10.3 soft
+//#define ES103TC2	//10.3 glass.
+//#define ES097
+//#define ES060KC1		// 6in 300dpi
+//#define ES060XCD		// 6in low solution.
+//#define ES100UC1		// 10in glass.
+#define ED078KH4
+//-----------------PCB VERSION---------------------------
+//#define ES060_PCBV2
+
+
+//-----------------TP/PEN---------------------------
+#define TP_CYT //super78
+//#define TP_FT5X //super103s
+#define TP_ATMEL
+#define TYPEC_HEADSET 
+/ {
+	model = "Rockchip PX30 ht 103h' board";
+	compatible = "rockchip,px30-eink-103h", "rockchip,px30";
+
+	rk_key: rockchip-key {
+		compatible = "rockchip,key";
+		status = "okay";
+		
+		#if 0  // 20191223: define at PMIC RK817.
+		power-key {
+			gpios = <&gpio0 5 GPIO_ACTIVE_LOW>;
+			linux,code = <116>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&pwrbtn>;
+			label = "power";
+			gpio-key,wakeup;
+		};
+		#endif 
+		
+//tanlq 20210923
+		hall-key {
+			gpios = <&gpio0 RK_PA3 GPIO_ACTIVE_LOW>;
+			linux,code = <KEY_SLEEP>; 
+			pinctrl-names = "default";
+			pinctrl-0 = <&hallbtn>;
+			label = "hall";
+
+			// 20191227: 亮屏休眠的情况下，我们需要唤醒系统并进入待机休眠的状态。但是如果是
+			// 待机休眠，则不需要有 wakeup 功能
+			gpio-key,wakeup;
+		};
+		
+	};
+
+	adc-keys {
+		compatible = "adc-keys";
+		io-channels = <&saradc 2>;
+		io-channel-names = "buttons";
+		poll-interval = <100>;
+		keyup-threshold-microvolt = <1800000>;
+		status = "okay";
+
+
+/*
+		menu-key {
+			linux,code = <KEY_MENU>;
+			label = "menu";
+			press-threshold-microvolt = <987000>;
+		};
+*/
+
+		vol-up-key {
+			linux,code = <KEY_VOLUMEUP>;
+			label = "volume up";
+			press-threshold-microvolt = <00000>;
+		};
+	};
+	
+	hardware {
+		compatible =  "ratta,board";
+		id = "a6x2";
+		status = "okay";
+	};
+#if 0
+	hall_sensor {
+		compatible =  "ratta,hall";
+		pinctrl-names = "default";
+		pinctrl-0 = <&hall_sensor_gpio>;
+		gpios = <&gpio0 RK_PA3 GPIO_ACTIVE_HIGH>;
+		hall-active = <1>;
+		pmu-gpio-int-reg-base = <0xff040000>;
+		pmu-gpio-int-reg-size = <0x100>;
+		pmu-gpio-int-stat = <0x40>;
+		pmu-gpio-int-mask = <0x80>;
+		status = "okay";
+	};
+
+	leds: gpio-leds {
+		compatible = "gpio-leds";
+		pinctrl-names = "default";
+		pinctrl-0 =<&leds_gpio>;
+		status = "disabled"; //20191226: we ctrl led at battery-driver.
+
+		led@1 {
+			gpios = <&gpio1 RK_PD4 GPIO_ACTIVE_HIGH>; //v3
+			label = "battery_led_red";
+			retain-state-suspended;
+		};
+
+		led@2 {
+			gpios = <&gpio1 RK_PD5 GPIO_ACTIVE_HIGH>; //v3
+			label = "battery_led_green";
+			retain-state-suspended;
+		};
+	};
+
+	htfyun-hall_observe {
+        compatible = "htfyun-hall_observe";
+        hall-gpio = <&gpio0 RK_PA3 GPIO_ACTIVE_HIGH>; //v3
+        //hall2-gpio = <&gpio1 RK_PD5 GPIO_ACTIVE_LOW>;
+        //status = "okay";
+	status = "disabled"; //20191226:current use one HALL-GPIO as sleep key.
+	};
+#endif
+#ifdef TP_ATMEL
+	ratta-touch {
+		compatible = "ratta,touch";
+		status = "okay";
+		pinctrl-names = "default";
+		pinctrl-0 = <&touch_panel_gpio>;
+		ratta,gpio-power = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+		ratta,gpio-reset = <&gpio0 RK_PA1 GPIO_ACTIVE_LOW>;
+		ratta,gpio-irq = <&gpio0 RK_PA7 IRQ_TYPE_EDGE_RISING>;
+	};
+#endif
+	rk809-sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,format = "i2s";
+		simple-audio-card,name = "rockchip,rk809-codec";
+		simple-audio-card,mclk-fs = <256>;
+		simple-audio-card,widgets =
+			"Microphone", "Mic Jack",
+			"Headphone", "Headphone Jack";
+		simple-audio-card,routing =
+			"Mic Jack", "MICBIAS1",
+			"IN1P", "Mic Jack",
+			"Headphone Jack", "HPOL",
+			"Headphone Jack", "HPOR";
+		simple-audio-card,cpu {
+			sound-dai = <&i2s1_2ch>;
+		};
+		simple-audio-card,codec {
+			sound-dai = <&rk809_codec>;
+		};
+	};
+	rk_headset {
+		compatible = "rockchip_headset";
+
+		headset_gpio = <&gpio2 RK_PB0 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&hp_det>;
+		io-channels = <&saradc 1>;
+		status = "disabled"; //20191226:use our headset from RK3288.
+	};
+
+	sdio_pwrseq: sdio-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		/*clocks = <&rk809 1>;*/
+		/*clock-names = "ext_clock";*/
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_enable_h>;
+
+		/*
+		 * On the module itself this is one of these (depending
+		 * on the actual card populated):
+		 * - SDIO_RESET_L_WL_REG_ON
+		 * - PDN (power down when low)
+		 */
+		reset-gpios = <&gpio0 RK_PC1 GPIO_ACTIVE_LOW>; /* GPIO0_C1 */
+	};
+
+#if 0
+	eink_power: eink-power {
+		compatible = "regulator-fixed";
+		regulator-name = "eink_power";
+		gpio = <&gpio0 RK_PB2 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
+#endif
+
+	
+        /*
+	htfy_dump: htfy_dump {
+		compatible = "htfy_dump";
+		dumpmemory-region = <&dumpfs_reserved>;
+		status = "disabled";
+	};
+	*/
+
+	htfyun_headset_det {
+		compatible = "htfyun,headset";
+
+		// 20180205,NO-MIC needs.
+		//io-channels = <&saradc 2>;
+		io-channels = <&saradc 1>;
+
+		#if 1
+		// this is the value for xiaomi headset.--empty is 760（NOT insert value)
+		// 不带MIC的耳机不能上报是MIC，否则无法录音。所以 mic-adc 用来判断是否插入了带MIC的耳机。
+		// 目前的硬件只能支持苹果类型的耳机，诺基亚类型的耳机不支持。
+		// ADC值：不插耳机 电压是1.5V，插上耳机电压是0.75V左右，耳机上的按键按下是0V,adc参考电压是 1.8V。
+		// 如果耳机是0V，可以认为是不带麦？？如果是按着按键插入耳机呢？需要等待按键松开了才能判断是否带MIC。
+		// 所以驱动里面 adc_check_work_callback 函数要有顺序之分。
+		// 如果数值 == 0 ，表示只要ADC 大于0就是有MIC（考虑误差之后）。
+		// 陈飞的耳机插入后adc值： hs_det:read adc value=676
+		// 20180928: 不插入耳机： 1.8V，插入 3段耳机： 0V, 四段耳机 > 0.5V
+		// 小米耳机： hs_det:read adc value=692
+		mic-adc = <280>;  // 0.5*1023/1.8 = 284
+
+		// if we don't have these key,don't define it!
+		//media-adc = <7>;  //media key press.-- if NOT ,don't define.
+
+		// 20180827: don't need UP/DOWN!
+		//volup-adc = <75>;  //volup key press. -- if NOT ,don't define.
+		//voldown-adc = <162>;  //voldown key preess. -- if NOT ,don't define.
+		#else
+		// this is the value for apple headset.
+		mic-adc = <553>;  //the headset with MIC adc value.
+		media-adc = <9>;  //media key press.
+		volup-adc = <74>;  //volup key press.
+		voldown-adc = <141>;  //voldown key preess.
+		#endif
+
+		//debug-adc = <279>;  //the debug adc to report a debug key.-- KEY_RO 89
+
+		//20191226: unplug: LOW , plug: HIGH.
+		//headset_gpio = <&gpio0 RK_PA2 GPIO_ACTIVE_HIGH>; //supernote
+
+		// 20170824,this make the music auto play when headset unplug(play internal/external sd)
+		//unplug_report_key; // 20170510,weather we want to report media key when heaset unplug
+
+		adc_sample_ms = <150>; // the period when loop to sample adc value.default is 200ms.
+
+		status = "disable";//1.8v上拉电压休眠时会掉，造成耳机中断，不能进入休眠 "okay"; //disabled
+  };
+#if 0
+  regulators { 
+  	compatible = "simple-bus"; 
+  	#address-cells = <1>; 
+  	#size-cells = <0>; 
+  	vccio_1v8_reg: regulator@0 {
+  	  compatible = "regulator-fixed"; 
+  	  regulator-name = "vccio_1v8"; 
+  	  regulator-min-microvolt = <1800000>; 
+  	  regulator-max-microvolt = <1800000>; 
+  	  regulator-state-mem {
+			regulator-on-in-suspend;
+			regulator-suspend-microvolt = <950000>;
+		};
+  	}; 
+  };
+#endif
+	vcc5v0_sys: vccsys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+	};
+
+	vcc2v2_sys: vccsys_2v2 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc2v2_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <2200000>;
+		regulator-max-microvolt = <2200000>;
+	};
+
+	vcc3v3_lcd: vcc3v3_lcd {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_lcd";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+	};
+
+	wireless-wlan {
+		compatible = "wlan-platdata";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wlan_gpios>;
+		wifi_chip_type = "ap6256";
+		WIFI,host_wake_irq = <&gpio2 RK_PC3 GPIO_ACTIVE_HIGH>;//<&gpio2 RK_PA1 GPIO_ACTIVE_HIGH>;
+		
+		// 20191223,hsl add. --2019124:this gpio ctrl wifi/i2c2/4g power.so don't ctrl here.
+		//WIFI,poweren_gpio = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
+		WIFI,vbat_gpio = <&gpio2 RK_PC6 GPIO_ACTIVE_HIGH>;
+
+		status = "okay";
+	};
+
+	wireless-bluetooth {
+		compatible = "bluetooth-platdata";
+		clocks = <&rk817 1>;
+		clock-names = "ext_clock";
+		uart_rts_gpios = <&gpio1 RK_PC3 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default","rts_gpio";
+		pinctrl-0 = <&uart1_rts &bt_gpios>;
+		pinctrl-1 = <&uart1_rts_gpio>;
+		BT,reset_gpio = <&gpio0 RK_PC0 GPIO_ACTIVE_HIGH>;
+		BT,wake_gpio = <&gpio0 RK_PB5 GPIO_ACTIVE_HIGH>;
+		
+		// 20191227:这个功能主要用于蓝牙设备唤醒系统，比如蓝牙键盘，目前我们不需要。如果此处定义了，由于系统进入灭屏
+		// 休眠后会关闭整组 GPIO2的电源，所以会产生低电平触发，导致系统产生中断而阻止进入休眠.
+		//BT,wake_host_irq = <&gpio0 RK_PB7 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
+	fiq-debugger {
+			compatible = "rockchip,fiq-debugger";
+			status = "okay"; // "okay"; //"disabled";// 
+	};
+};
+
+&eink {
+	status = "okay";
+	tcon = <&tcon1>;
+	ext_uifc;	// 20210804: 需要额外的 UIFC buffer 来支持 native 手写。
+	
+	// 20191204: only add for debug. --20191224:use to ctrl power supplay for GPIO/I2C2/WIFI.
+	//htfy,dbg-gpio = <&gpio2 RK_PA7 GPIO_ACTIVE_HIGH>;
+	//htfy,dbg-gpio = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
+	//pinctrl-names = "default";
+	//pinctrl-0 = <&tcon_pwr>;
+	
+	/* ES103TC1 */
+#if defined(ES103)
+		panel,width = <1872>;
+		panel,height = <1404>;
+		panel,vir_width = <1872>;
+		panel,vir_height = <1404>;
+		panel,sdck = <33300000>;
+		panel,pixels-per-sdck = <8>;
+		panel,lsl = <11>;
+		panel,lbl = <8>;
+		panel,ldl = <234>;
+		panel,lel = <23>;
+		panel,gdck-sta = <10>;
+		panel,lgonl = <215>;
+		panel,fsl = <1>;
+		panel,fbl = <4>;
+		panel,fdl = <1404>;
+		panel,fel = <12>; // supernote
+		panel,vcom-mv = <1560>;
+#elif defined(ES103TC2)
+		panel,width = <1872>;
+		panel,height = <1404>;
+		panel,vir_width = <1872>;
+		panel,vir_height = <1404>;
+		panel,sdck = <33300000>;
+		panel,pixels-per-sdck = <8>;
+		panel,lsl = <18>;
+		panel,lbl = <17>;
+		panel,ldl = <234>;
+		panel,lel = <7>;
+		panel,gdck-sta = <34>;
+		panel,lgonl = <192>;
+		panel,fsl = <1>;
+		panel,fbl = <3>;
+		panel,fdl = <1404>;
+		panel,fel = <1>;
+		panel,vcom-mv = <1710>;
+		//panel,mirror = <1>;
+#elif defined(ES100UC1)
+		panel,width = <1600>;
+		panel,height = <1200>;
+		panel,vir_width = <1600>;
+		panel,vir_height = <1200>;
+		panel,sdck = <30000000>;
+		panel,pixels-per-sdck = <8>;
+		panel,lsl = <10>;
+		panel,lbl = <7>;
+		panel,ldl = <200>;
+		panel,lel = <73>;
+		panel,gdck-sta = <15>;
+		panel,lgonl = <243>;
+		panel,fsl = <1>;
+		panel,fbl = <4>;
+		panel,fdl = <1200>;
+		panel,fel = <1>;
+		panel,vcom-mv = <1580>;	
+#elif defined(ES097)  /* ED097TC2U1 */
+		panel,width = <1200>;
+		panel,height = <825>;
+		panel,vir_width = <1200>;
+		panel,vir_height = <832>;
+		panel,sdck = <30000000>;
+		panel,pixels-per-sdck = <4>;
+		panel,lsl = <4>;
+		panel,lbl = <4>;
+		panel,ldl = <300>;
+		panel,lel = <36>;
+		panel,gdck-sta = <18>;
+		panel,lgonl = <265>;
+		panel,fsl = <2>;
+		panel,fbl = <4>;
+		panel,fdl = <825>;
+		panel,fel = <24>;
+		panel,vcom-mv = <1930>;
+#elif defined(ES060KC1)
+	  panel,width = <1448>;
+	  panel,height = <1072>;
+	  panel,vir_width = <1456>;	//20200904,hsl: 64bit needs 16pixel align,maybe cache problem when memset.
+	  panel,vir_height = <1072>;
+	  panel,sdck = <40000000>;
+	  panel,pixels-per-sdck = <4>;
+	  panel,lsl = <14>;
+	  panel,lbl = <8>;
+	  panel,ldl = <362>;
+	  panel,lel = <51>;
+	  panel,gdck-sta = <100>;
+	  panel,lgonl = <281>;
+	  panel,fsl = <2>;
+	  panel,fbl = <4>;
+	  panel,fdl = <1072>;
+	  panel,fel = <4>;
+	  panel,vcom-mv = <2250>;
+#elif defined(ES060XCD)
+	  panel,width = <1024>;
+	  panel,height = <758>;
+	  panel,vir_width = <1024>;	 
+	  panel,vir_height = <758>;
+	  panel,sdck = <20000000>;
+	  panel,pixels-per-sdck = <4>;
+	  panel,lsl = <6>;
+	  panel,lbl = <6>;
+	  panel,ldl = <256>;
+	  panel,lel = <38>;
+	  panel,gdck-sta = <4>;
+	  panel,lgonl = <262>;
+	  panel,fsl = <2>;
+	  panel,fbl = <4>;
+	  panel,fdl = <758>;
+	  panel,fel = <5>;
+	  panel,vcom-mv = <2250>;
+#elif defined(ED078KH4)
+	  
+	/* ED078KH4 */
+	panel,width = <1872>;
+	panel,height = <1404>;
+	panel,vir_width = <1872>;
+	panel,vir_height = <1404>;
+	panel,sdck = <33300000>;
+	panel,pixels-per-sdck = <8>;
+	panel,lsl = <18>;
+	panel,lbl = <17>;
+	panel,ldl = <234>;
+	panel,lel = <7>;
+	panel,gdck-sta = <34>;
+	panel,lgonl = <192>;
+	panel,fsl = <1>;
+	panel,fbl = <4>;
+	panel,fdl = <1404>;
+	panel,fel = <12>;
+	panel,vcom-mv = <1560>;
+
+
+#else
+	 "***Please Define EINK-PANEL first!!***"
+#endif
+};
+
+&tcon1 {
+	status = "okay";
+};
+
+// 20191005: the size is about 7* vir_w * vir_h .
+// fb_new/fb_old/fc/idx/auto/2*lcdc/wv_buf.
+// ReservedMem:total size=6291456,lcd data size=1568800,fb_size=2628288,remain=1034880
+// 20191120: 6*fb_size + 2*lcd_size + 1M.   
+// 20210804：增加一个 fb_size 用于存放 ptr-ui-fc.
+&display_reserved {
+	reg = <0x0 0x10000000 0x0 0x1500000>;
+	no-map;
+};
+
+
+&display_subsystem {
+	force-disconnected;
+	status = "okay";
+};
+
+&vopb {
+	status = "okay";
+};
+
+&vopb_mmu {
+	status = "okay";
+};
+
+&vopl {
+	status = "disabled";
+};
+
+&vopl_mmu {
+	status = "disabled";
+};
+
+&dsi {
+	status = "okay";
+
+	panel@0 {
+		compatible = "simple-panel-dsi";
+		reg = <0>;
+		power-supply = <&vcc3v3_lcd>; // supernote
+		prepare-delay-ms = <2>;
+		reset-delay-ms = <1>;
+		init-delay-ms = <20>;
+		enable-delay-ms = <120>;
+		disable-delay-ms = <50>;
+		unprepare-delay-ms = <20>;
+
+		width-mm = <68>;
+		height-mm = <121>;
+
+		dsi,flags = <(MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_BURST |
+			      MIPI_DSI_MODE_LPM | MIPI_DSI_MODE_EOT_PACKET)>;
+		dsi,format = <MIPI_DSI_FMT_RGB888>;
+		dsi,lanes = <4>;
+		display-timings {
+			native-mode = <&timing0>;
+
+			timing0: timing0 {
+				clock-frequency = <64000000>;
+				hactive = <720>;
+				vactive = <1280>;
+				hfront-porch = <40>;
+				hsync-len = <10>;
+				hback-porch = <40>;
+				vfront-porch = <22>;
+				vsync-len = <4>;
+				vback-porch = <11>;
+				hsync-active = <0>;
+				vsync-active = <0>;
+				de-active = <0>;
+				pixelclk-active = <0>;
+			};
+		};
+	};
+};
+
+&dsi_in_vopl {
+	status = "disabled";
+};
+
+&dsi_in_vopb {
+        status = "okay";
+};
+
+&route_dsi {
+	status = "disabled";
+};
+
+&bus_apll {
+	bus-supply = <&vdd_logic>;
+	status = "okay";
+};
+
+&cpu0 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&dfi {
+	status = "okay";
+};
+
+&dmc {
+	center-supply = <&vdd_logic>;
+	status = "okay";
+};
+
+&gpu {
+	mali-supply = <&vdd_logic>;
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+
+	rk817: pmic@20 {
+		compatible = "rockchip,rk817";
+		reg = <0x20>;
+		interrupt-parent = <&gpio0>;
+		interrupts = <5 IRQ_TYPE_LEVEL_LOW>;
+		pinctrl-names = "default", "pmic-sleep";
+				//"pmic-power-off", "pmic-reset";
+		pinctrl-0 = <&pmic_int>, <&rk817_pin_gt>;
+		pinctrl-1 = <&soc_slppin_slp>, <&rk817_slppin_slp>;
+		//pinctrl-2 = <&soc_slppin_gpio>, <&rk817_slppin_pwrdn>;
+		//pinctrl-3 = <&soc_slppin_rst>, <&rk817_slppin_rst>;
+		rockchip,system-power-controller;
+		wakeup-source;
+		#clock-cells = <1>;
+		clock-output-names = "rk808-clkout1", "rk808-clkout2";
+		//fb-inner-reg-idxs = <2>;
+		/* 1: rst regs (default in codes), 0: rst the pmic */
+		pmic-reset-func = <0>;
+		pmic-sleep-reverse;
+
+		vcc1-supply = <&vcc5v0_sys>;
+		vcc2-supply = <&vcc5v0_sys>;
+		vcc3-supply = <&vcc5v0_sys>;
+		vcc4-supply = <&vcc5v0_sys>;
+		vcc5-supply = <&vcc2v2_sys>;
+		vcc6-supply = <&vcc5v0_sys>;
+		vcc7-supply = <&vcc_3v0>;
+		vcc8-supply = <&vcc5v0_sys>;
+		vcc9-supply = <&vcc5v0_sys>;
+
+		pwrkey {
+			status = "okay";
+		};
+
+		pinctrl_rk8xx: pinctrl_rk8xx {
+			gpio-controller;
+			#gpio-cells = <2>;
+
+			rk817_ts_gpio1: rk817_ts_gpio1 {
+				pins = "gpio_ts";
+				function = "pin_fun1";
+				/* output-low; */
+				/* input-enable; */
+			};
+
+			rk817_gt_gpio2: rk817_gt_gpio2 {
+				pins = "gpio_gt";
+				function = "pin_fun1";
+			};
+
+			rk817_pin_ts: rk817_pin_ts {
+				pins = "gpio_ts";
+				function = "pin_fun0";
+			};
+
+			rk817_pin_gt: rk817_pin_gt {
+				pins = "gpio_gt";
+				function = "pin_fun0";
+			};
+
+			rk817_slppin_null: rk817_slppin_null {
+				pins = "gpio_slp";
+				function = "pin_fun0";
+			};
+
+			rk817_slppin_slp: rk817_slppin_slp {
+				pins = "gpio_slp";
+				function = "pin_fun1";
+			};
+
+			rk817_slppin_pwrdn: rk817_slppin_pwrdn {
+				pins = "gpio_slp";
+				function = "pin_fun2";
+			};
+
+			rk817_slppin_rst: rk817_slppin_rst {
+				pins = "gpio_slp";
+				function = "pin_fun3";
+			};
+		};
+
+		regulators {
+			vdd_logic: DCDC_REG1 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <950000>;
+				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <6001>;
+				regulator-initial-mode = <0x2>;
+				regulator-name = "vdd_logic";
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <950000>;
+				};
+			};
+
+			vdd_arm: DCDC_REG2 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <950000>;
+				regulator-max-microvolt = <1350000>;
+				regulator-ramp-delay = <6001>;
+				regulator-initial-mode = <0x2>;
+				regulator-name = "vdd_arm";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+					regulator-suspend-microvolt = <950000>;
+				};
+			};
+
+			vcc_ddr: DCDC_REG3 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-name = "vcc_ddr";
+				regulator-initial-mode = <0x2>;
+				regulator-state-mem {
+					regulator-on-in-suspend;
+				};
+			};
+
+			vcc_3v0: DCDC_REG4 {
+				//regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <3000000>;
+				regulator-max-microvolt = <3000000>;
+				regulator-initial-mode = <0x2>;
+				regulator-name = "vcc_3v0";
+				regulator-state-mem {
+					//regulator-on-in-suspend;  // 20210713: on when screen-on sleep for TP/PEN. 
+					regulator-off-in-suspend;  
+					regulator-suspend-microvolt = <3000000>;
+				};
+			};
+
+			vcc3v3_sys: DCDC_REG5 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vcc3v3_sys";
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <3300000>;
+				};
+			};
+
+			vcc_1v0: LDO_REG1 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1000000>;
+				regulator-max-microvolt = <1000000>;
+				regulator-name = "vcc_1v0";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+					regulator-suspend-microvolt = <1000000>;
+				};
+			};
+
+			vcc1v8_soc: LDO_REG2 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+
+				regulator-name = "vcc1v8_soc";
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <1800000>;
+				};
+			};
+
+			vdd1v0_soc: LDO_REG3 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1000000>;
+				regulator-max-microvolt = <1000000>;
+
+				regulator-name = "vcc1v0_soc";
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <1000000>;
+				};
+			};
+
+			vcc3v0_pmu: LDO_REG4 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <3000000>;
+				regulator-max-microvolt = <3000000>;
+
+				regulator-name = "vcc3v0_pmu";
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <3000000>;
+
+				};
+			};
+
+			vccio_sd: LDO_REG5 {
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <3300000>;
+
+				regulator-name = "vccio_sd";
+				regulator-state-mem {
+					//regulator-on-in-suspend;//tanlq 191024
+					regulator-off-in-suspend;
+					regulator-suspend-microvolt = <3300000>;
+				};
+			};
+			
+			// 20191227:don't use
+			vcc_sd: LDO_REG6 {
+				//regulator-boot-on;
+				//regulator-always-on;	 
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+
+				regulator-name = "vcc_sd";
+				regulator-state-mem {
+					//regulator-on-in-suspend; 
+					regulator-off-in-suspend; 
+					regulator-suspend-microvolt = <3300000>;
+
+				};
+			};
+
+			vcc2v8_dvp: LDO_REG7 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+
+				regulator-name = "vcc2v8_dvp";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+					regulator-suspend-microvolt = <2800000>;
+				};
+			};
+
+			vcc1v8_dvp: LDO_REG8 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+
+				regulator-name = "vcc1v8_dvp";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <1800000>;
+				};
+			};
+
+			vdd1v5_dvp: LDO_REG9 {	
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1500000>;
+				regulator-max-microvolt = <1500000>;
+
+				regulator-name = "vdd1v5_dvp";
+				
+				// 20191207, use for wacom power. and ctrl by fb when suspend.
+				regulator-state-mem {
+					regulator-off-in-suspend;		
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <1500000>;
+				};
+			
+			};
+
+			dcdc_boost: BOOST {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <4700000>;
+				regulator-max-microvolt = <5400000>;
+				regulator-name = "boost";
+			};
+
+			otg_switch: OTG_SWITCH {
+				regulator-boot-on;
+				regulator-name = "otg_switch";
+			};
+		};
+		battery {
+			compatible = "rk817,battery";
+			ocv_table = <3400 3657 3680 3706 3732 3749 3763
+				3776 3790 3807 3828 3857 3907 3949
+				3976 4040 4081 4133 4186 4242 4308>;
+			design_capacity = <2900>;	// 这个是 FCC 。
+			design_qmax = <3190>;		// 20210227,hsl: 这个值限定了电池充满后最大的可能电量。
+			bat_res = <110>;			// 这个是 电池内阻。
+			sleep_enter_current = <300>;
+			sleep_exit_current = <300>;
+			sleep_filter_current = <100>;
+			power_off_thresd = <3500>;    //20210225,hsl change.
+			zero_algorithm_vol = <3950>;
+			max_soc_offset = <60>;
+			monitor_sec = <10>;  //20191229,hsl fix.
+			sample_res = <10>;		// 这个是采样电阻，目前用的是 10毫欧。
+			virtual_power = <0>;
+	
+			// 20191229,hsl add.
+			pinctrl-names = "default";
+			//pinctrl-0 =<&leds_gpio>; supernote 暂时屏蔽
+			//rled_gpios = <&gpio2 RK_PB0 GPIO_ACTIVE_HIGH>; // V3 light on high.
+			//gled_gpios = <&gpio2 RK_PB2 GPIO_ACTIVE_HIGH>; // v3
+			
+			// 20210412: 根据金亚太需求增加 3个LED电量指示：
+			/*
+			红色长亮（充电状态下）：电池电量低。(<20%)
+			黄色长亮（充电状态下）：电池电量中。(21%-80%)
+			绿色长亮（充电状态下）：电池电量高。(81%-99%)
+			绿色闪（充电状态下）：充电接近完成或已经完成。（>99%）
+			红灯闪：电量低于5%
+			*/
+			tri-led = <20 80 99 1>;
+
+		};
+
+		charger {
+			compatible = "rk817,charger";
+			min_input_voltage = <4500>;
+			max_input_current = <1800>;	// 20191230,hsl fix.
+			max_chrg_current = <2000>;
+			max_chrg_voltage = <4350>;
+			chrg_term_mode = <0>;  // 0: CHRG_ANALOG, 1: CHRG_DIGITAL
+			chrg_finish_cur = <150>;  // 20210227: 墨水屏上面亮屏待机情况下，功耗比较少，可以改低这个值.
+			virtual_power = <0>;
+			dc_det_adc = <0>;
+			extcon = <&u2phy>;
+		};
+
+		rk809_codec: codec {
+			#sound-dai-cells = <0>;
+			compatible = "rockchip,rk809-codec", "rockchip,rk817-codec";
+			clocks = <&cru SCLK_I2S1_OUT>;
+			clock-names = "mclk";
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2s1_2ch_mclk>;
+			hp-volume = <20>;
+			spk-volume = <3>;
+			status = "okay";
+		};
+	};
+
+};
+
+#define MXT_SUSPEND_DEEP_SLEEP 0
+&i2c1 {
+	status = "okay";
+
+	pinctrl-names = "default";
+	//power-gpio = <&gpio0 RK_PA6 GPIO_ACTIVE_HIGH>;
+#ifdef TP_ATMEL	
+	atmel-touch@4b {
+		reg = <0x4b>;
+		compatible = "atmel,maxtouch";
+		status = "okay";
+		interrupt-parent = <&gpio0>;
+		interrupts = <RK_PA7 IRQ_TYPE_EDGE_FALLING>;
+		atmel,power-gpio =<&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;
+		atmel,reset-gpio = <&gpio0 RK_PA1 GPIO_ACTIVE_HIGH>;
+		atmel,suspend-mode = <MXT_SUSPEND_DEEP_SLEEP>;
+		atmel,cfg_name="maxtouch_a6x.cfg";
+		atmel,xres = <1400>;
+		atmel,yres = <1871>;
+	};
+#endif
+#ifdef TP_CYT
+
+tsc@24 {
+	    status = "okay";
+			compatible = "cy,cyttsp5_i2c_adapter";
+			reg = <0x24>;
+			interrupt-parent = <&gpio0>;
+			interrupts = <7 IRQ_TYPE_LEVEL_LOW>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&touch_panel_gpio>;
+			cy,adapter_id = "cyttsp5_i2c_adapter";
+			//vcc_tp-supply = <&vcc_tp>;
+
+			cy,core {
+				cy,name = "cyttsp5_core";
+				// IRQ:GPIO7 A6
+				cy,power_gpio = <&gpio0 RK_PA0 GPIO_ACTIVE_HIGH>;//v3
+				cy,irq_gpio = <&gpio0 RK_PA7 IRQ_TYPE_LEVEL_LOW>;//v3
+				// RST:GPIO7 A5
+				cy,rst_gpio = <&gpio0 RK_PA1 GPIO_ACTIVE_LOW>;//v3
+				cy,hid_desc_register = <1>;
+				/* CY_CORE_FLAG_RESTORE_PARAMETERS = 4,
+				 CY_CORE_FLAG_POWEROFF_ON_SLEEP = 0x02 */
+				cy,flags = <6>;	// 20180227,hsl,poweroff when sleep. and reset the gpio.
+				/* CY_CORE_EWG_NONE */
+				cy,easy_wakeup_gesture = <0>;
+				cy,btn_keys = <172 /* KEY_HOMEPAGE */
+					   	   /* previously was KEY_HOME, new Android versions use KEY_HOMEPAGE g*/
+				               139 /* KEY_MENU */
+				               158 /* KEY_BACK */
+				               217 /* KEY_SEARCH */
+				               114 /* KEY_VOLUMEDOWN */
+				               115 /* KEY_VOLUMEUP */
+				               212 /* KEY_CAMERA */
+				               116>; /* KEY_POWER */
+				cy,btn_keys-tag = <0>;
+
+				cy,mt {
+					cy,name = "cyttsp5_mt";
+
+					cy,inp_dev_name = "cyttsp5_mt";
+					cy,flags = <0x10>;// 0x20: CY_MT_FLAG_INV_Y  CY_MT_FLAG_FLIP = 0x08 CY_MT_FLAG_INV_X = 0x10,
+					cy,abs =
+						/* ABS_MT_POSITION_X, CY_ABS_MIN_X, CY_ABS_MAX_X, 0, 0 */
+						<0x35 0 1200 0 0
+						/* ABS_MT_POSITION_Y, CY_ABS_MIN_Y, CY_ABS_MAX_Y, 0, 0 */
+						0x36 0 1600 0 0
+						/* ABS_MT_PRESSURE, CY_ABS_MIN_P, CY_ABS_MAX_P, 0, 0 */
+						0x3a 0 255 0 0
+						/* CY_IGNORE_VALUE, CY_ABS_MIN_W, CY_ABS_MAX_W, 0, 0 */
+						0xffff 0 255 0 0
+						/* ABS_MT_TRACKING_ID, CY_ABS_MIN_T, CY_ABS_MAX_T, 0, 0 */
+						0x39 0 15 0 0
+						/* ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0 */
+						0x30 0 255 0 0
+						/* ABS_MT_TOUCH_MINOR, 0, 255, 0, 0 */
+						0x31 0 255 0 0
+						/* ABS_MT_ORIENTATION, -127, 127, 0, 0 */
+						0x34 0xffffff81 127 0 0
+						/* ABS_MT_TOOL_TYPE, 0, MT_TOOL_MAX, 0, 0 */
+						0x37 0 1 0 0
+						/* ABS_DISTANCE, 0, 255, 0, 0 */
+						0x19 0 255 0 0>;
+
+					cy,vkeys_x = <1404>; //1404
+					cy,vkeys_y = <1872>; //1872
+#if 0
+					cy,virtual_keys = /* KeyCode CenterX CenterY Width Height */
+						/* KEY_BACK */
+						<158 1360 90 160 180
+						/* KEY_MENU */
+						139 1360 270 160 180
+						/* KEY_HOMEPAGE */
+						172 1360 450 160 180
+						/* KEY SEARCH */
+						217 1360 630 160 180>;
+#endif
+				};
+
+				cy,btn {
+					cy,name = "cyttsp5_btn";
+
+					cy,inp_dev_name = "cyttsp5_btn";
+				};
+
+				cy,proximity {
+					cy,name = "cyttsp5_proximity";
+
+					cy,inp_dev_name = "cyttsp5_proximity";
+					cy,abs =
+						/* ABS_DISTANCE, CY_PROXIMITY_MIN_VAL, CY_PROXIMITY_MAX_VAL, 0, 0 */
+						<0x19 0 1 0 0>;
+				};
+			};
+		};
+#endif
+};
+
+&i2c2 {
+	status = "okay";
+
+	clock-frequency = <400000>;
+
+	/* These are relatively safe rise/fall times; TODO: measure */
+	//i2c-scl-falling-time-ns = <60>;
+	//i2c-scl-rising-time-ns = <350>;
+	
+	tps65185@68 {
+		status = "okay";
+		compatible = "ti,tps65185";
+		reg = <0x68>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&tps65185_gpio>;
+		wakeup_pin = <&gpio2 RK_PA2 GPIO_ACTIVE_HIGH>;
+		vcomctl_pin = <&gpio2 RK_PA1 GPIO_ACTIVE_HIGH>;
+		powerup_pin = <&gpio2 RK_PA4 GPIO_ACTIVE_HIGH>;
+		//eink_int_pin = <&gpio2 RK_PA6 GPIO_ACTIVE_LOW>;
+		error_pin = <&gpio2 RK_PA3 GPIO_ACTIVE_HIGH>;
+		poweren_pin = <&gpio2 RK_PA5 GPIO_ACTIVE_HIGH>;
+	};
+
+};
+
+&i2c3 {
+	status = "okay";
+	awinic: aw2013@45{
+		compatible = "awinic,aw2013";
+		reg = <0x45>;
+		vdd-supply = <&vcc_3v0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&awinic_gpio>;
+		
+		aw2013,red {
+			aw2013,name = "red";
+			aw2013,id = <0>;
+			aw2013,max-brightness = <255>;
+			aw2013,max-current = <1>;
+			aw2013,rise-time-ms = <2>;
+			aw2013,hold-time-ms = <1>;
+			aw2013,fall-time-ms = <2>;
+			aw2013,off-time-ms = <1>;
+		};
+
+		aw2013,green {
+			aw2013,name = "green";
+			aw2013,id = <1>;
+			aw2013,max-brightness = <255>;
+			aw2013,max-current = <1>;
+			aw2013,rise-time-ms = <2>;
+			aw2013,hold-time-ms = <1>;
+			aw2013,fall-time-ms = <2>;
+			aw2013,off-time-ms = <1>;
+		};
+
+		aw2013,blue {
+			aw2013,name = "blue";
+			aw2013,id = <2>;
+			aw2013,max-brightness = <255>;
+			aw2013,max-current = <1>;
+			aw2013,rise-time-ms = <2>;
+			aw2013,hold-time-ms = <1>;
+			aw2013,fall-time-ms = <2>;
+			aw2013,off-time-ms = <1>;
+		};
+	};
+	wacom-emr@09 {
+		compatible = "wacom,w9013";
+		reg = <0x09>;
+		status = "okay";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wacom_emr_gpio>;
+		gpio_intr = <&gpio0 RK_PB4 GPIO_ACTIVE_HIGH>;
+		gpio_detect = <&gpio0 RK_PB3 GPIO_ACTIVE_HIGH>;
+		gpio_rst = <&gpio0 RK_PA2 GPIO_ACTIVE_HIGH>;
+		gpio_pwren = <&gpio0 RK_PB2 GPIO_ACTIVE_HIGH>;
+		wacom,fw_name="wacom_a6x.fw";
+		x-flip;
+		y-flip;
+	};
+#if defined(TYPEC_HEADSET)
+	tusb320@0x47 {
+		status = "okay";
+		compatible = "ti,tusb320";
+		reg = <0x47>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&tusb320_gpio>;
+		en_n = <&gpio2 RK_PA6 GPIO_ACTIVE_HIGH>;
+		typec_int = <&gpio2 RK_PB6 GPIO_ACTIVE_HIGH>;
+	 };
+#endif
+
+};
+
+&i2s1_2ch {
+	status = "okay";
+	#sound-dai-cells = <0>;
+};
+
+&io_domains {
+	status = "okay";
+
+	vccio1-supply = <&vcc1v8_dvp>;
+	vccio2-supply = <&vcc1v8_dvp>;
+	vccio3-supply = <&vcc_3v0>;
+	vccio4-supply = <&vcc2v8_dvp>;
+	vccio5-supply = <&vcc1v8_dvp>;
+};
+
+&isp_mmu {
+	status = "disabled"; //for camera
+};
+
+
+&mipi_dphy {
+	status = "okay";
+};
+
+&nandc0 {
+	status = "disabled";
+};
+
+&pinctrl {
+	headphone {
+		hp_det: hp-det {
+			rockchip,pins = <2 RK_PB0 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+	
+	tps_pmic {
+        tps65185_gpio: tps65185-gpio {
+        rockchip,pins =
+				/* E_PMIC_INT */
+				<2 RK_PB2 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* E_PMIC_VCOM_CTL */
+				<2 RK_PA1 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* E_PMIC_WAKEUP */
+				<2 RK_PA2 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* E_PMIC_PG */
+				<2 RK_PA3 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* E_PMIC_ON/PWRUP */
+				<2 RK_PA4 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* E_PWR_EN */
+				<2 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>;
+        };
+	};
+
+	input-dev {
+		wacom_emr_gpio: wacom-emr-gpio {
+			rockchip,pins =
+				/* EMR_INT */
+				<0 RK_PB4 RK_FUNC_GPIO &pcfg_pull_none>,
+				/* EMR_RST */
+				<0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* EMR_PDCTB */
+				<0 RK_PB3 RK_FUNC_GPIO &pcfg_pull_none>,
+				/* EMR_PWR_EN */
+				<0 RK_PB2 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+#if 1//def TP_ATMEL
+		touch_panel_gpio: touch-panel-gpio {
+			rockchip,pins =
+				/* TP_INT */
+				<0 RK_PA7 RK_FUNC_GPIO &pcfg_pull_up>,
+				/* TP_RST */
+				<0 RK_PA1 RK_FUNC_GPIO &pcfg_pull_down>,
+				/* TP_PWR_EN */
+				<0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+#endif
+
+	};
+
+	pmic {
+		pmic_int: pmic_int {
+			rockchip,pins =
+				<0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		soc_slppin_gpio: soc_slppin_gpio {
+			rockchip,pins =
+				<0 RK_PA4 RK_FUNC_GPIO &pcfg_output_low>;
+		};
+
+		soc_slppin_slp: soc_slppin_slp {
+			rockchip,pins =
+				<0 RK_PA4 RK_FUNC_1 &pcfg_pull_none>;
+		};
+
+		soc_slppin_rst: soc_slppin_rst {
+			rockchip,pins =
+				<0 RK_PA4 RK_FUNC_2 &pcfg_pull_none>;
+		};
+	};
+
+	sdio-pwrseq {
+		wifi_enable_h: wifi-enable-h {
+			rockchip,pins = <0 RK_PC1 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	wireless {
+		wlan_gpios: wlan-gpios {
+			/* reset gpio */
+			rockchip,pins =
+				/* wake host gpio */
+				<2 RK_PC3 RK_FUNC_GPIO &pcfg_pull_down>,
+				/* power ctl gpio */
+				<2 RK_PC6 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+		bt_gpios: bt-gpios {
+			/* reset gpio */
+			rockchip,pins =
+				/* reset gpio */
+				<0 RK_PC0 RK_FUNC_GPIO &pcfg_pull_down>,
+				/* wake bt gpio */
+				<0 RK_PB5 RK_FUNC_GPIO &pcfg_pull_down>,
+				/* wake host gpio */
+				<0 RK_PB7 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+	buttons {
+		hallbtn: hallbtn {
+			rockchip,pins = <0 RK_PA3 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+	};
+	led {
+		awinic_gpio: awinic-gpio {
+			rockchip,pins = <2 RK_PA7 RK_FUNC_GPIO &pcfg_pull_none>;
+	       };
+	};
+
+	ratta {
+		board_id_gpio: board-id-gpio {
+			rockchip,pins = <2 RK_PB3 RK_FUNC_GPIO &pcfg_pull_down>,
+							<2 RK_PB0 RK_FUNC_GPIO &pcfg_pull_down>,
+							<2 RK_PB1 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+#if 0//def TP_FT5X
+	focaltech {
+
+		ts_power_active: ts_power_active {
+			rockchip,pins =
+				<0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		ts_int_active: ts_int_active {
+			rockchip,pins =
+				<0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+		
+		ts_reset_active: ts_reset_active {
+			rockchip,pins =
+				<0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		ts_power_suspend: ts_power_suspend {
+			rockchip,pins =
+				<0 RK_PA4 RK_FUNC_GPIO &pcfg_output_low>;
+		};
+
+		ts_int_suspend: ts_int_suspend {
+			rockchip,pins =
+				<0 RK_PA4 RK_FUNC_GPIO &pcfg_output_low>;
+		};
+
+		ts_active: ts_active {
+			rockchip,pins =
+				<0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_up>,
+				<0 RK_PA7 RK_FUNC_GPIO &pcfg_pull_up>,
+				<0 RK_PA1 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		ts_suspend: ts_suspend {
+			rockchip,pins =
+				<0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_up>,
+				<0 RK_PA7 RK_FUNC_GPIO &pcfg_pull_up>,
+				<0 RK_PA1 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		ts_release: ts_release {
+			rockchip,pins =
+				<0 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>,
+				<0 RK_PA7 RK_FUNC_GPIO &pcfg_pull_none>,
+				<0 RK_PA1 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+	};
+#endif
+	typec {
+		tusb320_gpio: tusb320-gpio{
+			rockchip,pins =
+			    <2 RK_PA6 RK_FUNC_GPIO &pcfg_pull_down>, 
+			    <2 RK_PB6 RK_FUNC_GPIO &pcfg_pull_up>;
+     		 };
+	};
+};
+
+&pmu_io_domains {
+	status = "okay";
+
+	pmuio1-supply = <&vcc3v0_pmu>;
+	pmuio2-supply = <&vcc3v0_pmu>;
+};
+
+&rk_rga {
+	status = "okay";
+};
+
+&rockchip_suspend {
+	status = "okay";
+	rockchip,sleep-debug-en = <1>;
+	
+	// 20210713: copy from ratta-sn103.dts, support ultra sleep.
+	rockchip,sleep-mode-config = <
+		(0
+		| RKPM_SLP_ARMOFF
+		| RKPM_SLP_PMU_HW_PLLS_PD
+		| RKPM_SLP_PMU_PMUALIVE_32K
+		| RKPM_SLP_PMU_DIS_OSC
+		| RKPM_SLP_PMIC_LP
+		| RKPM_SLP_PIN_REVERSE
+		)
+	>;
+	rockchip,ultra-sleep-mode-config = <RKPM_SLP_ULTRA>;
+	rockchip,pwm-regulator-config = <RKPM_SLP_LDO2_ON>;
+};
+
+&saradc {
+	status = "okay";
+	vref-supply = <&vcc1v8_soc>;
+};
+
+&sdmmc {
+	bus-width = <4>;
+	cap-mmc-highspeed;
+	cap-sd-highspeed;
+	supports-sd;
+	card-detect-delay = <800>;
+	ignore-pm-notify;
+	/*cd-gpios = <&gpio2 4 GPIO_ACTIVE_HIGH>; [> CD GPIO <]*/
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
+	sd-uhs-sdr104;
+	vqmmc-supply = <&vccio_sd>;
+	vmmc-supply = <&vcc_sd>;
+	//tanlq close for uart debug
+	status = "disabled";//"okay";
+};
+
+&sdio {
+	bus-width = <4>;
+	cap-sd-highspeed;
+	supports-sdio;
+	ignore-pm-notify;
+	keep-power-in-suspend;
+	max-frequency = <50000000>;  // default 150M. 2.0 max freq 50M.
+	non-removable;
+	mmc-pwrseq = <&sdio_pwrseq>;
+	//sd-uhs-sdr104;	// only use at sdio3.0
+	sd-uhs-sdr50;
+	rockchip,default-sample-phase = <90>;
+	status = "okay";
+};
+
+&emmc {
+	bus-width = <8>;
+	cap-mmc-highspeed;
+	max-frequency = <100000000>;
+	mmc-hs200-1_8v;
+	supports-emmc;
+	keep-power-in-suspend; // 20191204,hsl add.
+	disable-wp;
+	non-removable;
+	num-slots = <1>;
+	status = "okay";
+};
+
+&tsadc {
+	pinctrl-names = "init", "default";
+	pinctrl-0 = <&tsadc_otp_gpio>;
+	pinctrl-1 = <&tsadc_otp_out>;
+	status = "okay";
+};
+
+&uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1_xfer &uart1_cts>;
+	status = "okay";
+};
+
+&u2phy {
+	status = "okay";
+
+	u2phy_host: host-port {
+		status = "okay";
+	};
+
+	u2phy_otg: otg-port {
+		status = "okay";
+	};
+};
+
+&usb20_otg {
+	status = "okay";
+};
+
+&usb_host0_ehci {
+	status = "okay";
+};
+
+&usb_host0_ohci {
+	status = "okay";
+};
+
+&vpu_combo {
+	status = "okay";
+};
+
+&dmc_opp_table {
+		opp-194000000 {
+            status = "disabled";
+        };
+              
+        opp-328000000 {
+            status = "disabled";
+        };
+              
+        opp-450000000 {
+            status = "disabled";
+        };
+		
+		opp-666000000 {
+			status = "disabled";
+		};
+};
+
+&firmware_android {
+	compatible = "android,firmware";
+	fstab {
+		compatible = "android,fstab";
+		system {
+			compatible = "android,system";
+			dev = "/dev/block/by-name/system";
+			type = "ext4";
+			mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
+			fsmgr_flags = "wait";
+		};
+		vendor {
+			compatible = "android,vendor";
+			dev = "/dev/block/by-name/vendor";
+			type = "ext4";
+			mnt_flags = "ro,barrier=1,inode_readahead_blks=8";
+			fsmgr_flags = "wait";
+		};
+	};
+};
+
+&chosen {
+	// 20210121-hsl: disable selinux for Z1 -- androidboot.selinux=permissive
+	bootargs = "earlyprintk=uart8250,mmio32,0xff160000 androidboot.selinux=permissive swiotlb=1 console=ttyFIQ0 androidboot.baseband=N/A androidboot.veritymode=enforcing androidboot.hardware=rk30board androidboot.console=ttyFIQ0 init=/init kpti=0";
+};

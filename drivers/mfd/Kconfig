@@ -1554,5 +1554,12 @@ config FUSB_30X
 	help
 	  This option provides a driver for the Fairchild FUSB302.
 	  It support typec-pd functionality by controlled using I2C.
+	  
+config TIUSB_320
+	tristate "TI usb320 Support"
+	depends on I2C=y
+	help
+	  This option provides a driver for the TI USB320.
+	  It support typec-pd functionality by controlled using I2C.
 
 endif

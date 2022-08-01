@@ -50,6 +50,98 @@ struct ehci_platform_priv {
 };
 
 static const char hcd_name[] = "ehci-platform";
+static struct device *gusbpdata;
+
+static void ehci_hcd_restart(struct usb_hcd *hcd)
+{
+	int irq, retval;
+
+	if (!hcd || hcd->irq < 0) {
+		dev_err(hcd->self.controller, "%s: hcd is null\n", __func__);
+	}
+
+	dev_info(hcd->self.controller,
+		 "%s: enter restart ehci hcd process.\n", __func__);
+
+	/*
+	 * note: record irq.
+	 * Because after usb_remove_hcd, hcd->irq is cleared,
+	 * resulting in failure to register ehci interrupt.
+	 */
+	irq = hcd->irq;
+
+	/* remove usb hcd */
+	usb_remove_hcd(hcd);
+
+	/* register usb hcd */
+	retval = usb_add_hcd(hcd, irq, IRQF_SHARED);
+	if (retval)
+		dev_err(hcd->self.controller,
+			"%s: register usb hcd fail(%d).\n", __func__, retval);
+}
+
+static ssize_t ehci_hcd_show(struct device *device,
+			     struct device_attribute *attr,
+			     char *buf)
+{
+	struct usb_hcd *hcd = dev_get_drvdata(device);
+	struct ehci_hcd *ehci = hcd_to_ehci (hcd);
+
+	if (ehci->rh_state == EHCI_RH_RUNNING)
+		return sprintf(buf, "Current is running state\n");
+	else if (ehci->rh_state == EHCI_RH_SUSPENDED)
+		return sprintf(buf, "Current is suspend state\n");
+	else if (ehci->rh_state == EHCI_RH_STOPPING)
+		return sprintf(buf, "Current is stopping state\n");
+	else
+		return sprintf(buf, "Current is halt state\n");
+
+}
+
+static ssize_t ehci_hcd_store(struct device *device,
+			      struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	struct usb_hcd *hcd = dev_get_drvdata(device);
+	int rc = count;
+
+	if ((!strncmp(buf, "1", 1)) || (!strncmp(buf, "restart", 7))) {
+		/* restart hcd */
+		ehci_hcd_restart(hcd);
+	} else {
+		dev_err(device, "Error input! Input '1' or 'restart'\n");
+		rc = -EINVAL;
+	}
+
+	return rc;
+}
+
+static DEVICE_ATTR_RW(ehci_hcd);
+
+static struct attribute *ehci_hcd_ctrl_attrs[] = {
+	&dev_attr_ehci_hcd.attr,
+	NULL,
+};
+
+static struct attribute_group ehci_hcd_ctrl_group = {
+	.name = NULL,
+	.attrs = ehci_hcd_ctrl_attrs,
+};
+
+
+// 20210807: add for meige 4G-CAT1,reset host.
+int ehci_reset_ehci_host(void)
+{
+	struct usb_hcd *hcd;
+	if(gusbpdata == NULL) return -EINVAL;
+
+	hcd = dev_get_drvdata(gusbpdata);
+	if(hcd == NULL) return -ENOENT;
+	
+	printk("%s: hcd=%p\n", __func__, hcd);
+	ehci_hcd_restart(hcd);
+	return 0;
+}
 
 static void ehci_rockchip_relinquish_port(struct usb_hcd *hcd, int portnum)
 {
@@ -154,6 +246,67 @@ static struct usb_ehci_pdata ehci_platform_defaults = {
 	.power_off =		ehci_platform_power_off,
 };
 
+static ssize_t ehci_wakeup_source_show(struct device *device,
+			          struct device_attribute *attr,
+			          char *buf)
+{
+	bool is_wakeup_source = device_may_wakeup(device);
+
+	if (is_wakeup_source)
+		return sprintf(buf, "%s device is wakeup source\n", dev_name(device));
+	else
+		return sprintf(buf, "%s device is no wakeup source\n", dev_name(device));
+
+	return -EINVAL;
+}
+
+static ssize_t ehci_wakeup_source_store(struct device *device,
+			      struct device_attribute *attr,
+			      const char *buf, size_t count)
+{
+	bool is_wakeup_source = device_may_wakeup(device);
+	int rc = count;
+
+	if ((!strncmp(buf, "1", 1)) || (!strncmp(buf, "enable-wakeup-source", 20))) {
+		if (is_wakeup_source)
+			dev_warn(device, "no need set, because it has wakeup source\n");
+		else
+			device_init_wakeup(device, true);
+	} else if ((!strncmp(buf, "0", 1)) || (!strncmp(buf, "disable-wakeup-source", 21))) {
+		if (is_wakeup_source)
+			device_init_wakeup(device, false);
+	} else {
+		dev_err(device, "Error input! Input '1' or '0'\n");
+		rc = -EINVAL;
+	}
+
+	return rc;
+}
+
+static DEVICE_ATTR_RW(ehci_wakeup_source);
+
+static struct attribute *ehci_wakeup_source_ctrl_attrs[] = {
+	&dev_attr_ehci_wakeup_source.attr,
+	NULL,
+};
+
+static struct attribute_group ehci_wakeup_source_ctrl_group = {
+	.name = NULL,
+	.attrs = ehci_wakeup_source_ctrl_attrs,
+};
+
+// 20210807: add for meige 4G-CAT1.
+int ehci_wakeup_ctrl(bool wakeup)
+{
+	bool is_wakeup_source = device_may_wakeup(gusbpdata);
+
+	if(is_wakeup_source == wakeup)
+		return 0;
+	device_init_wakeup(gusbpdata, wakeup);
+	printk(" 4g ehci_wakeup_ctrl:%d\n",wakeup);
+	return 0;
+}
+
 static int ehci_platform_probe(struct platform_device *dev)
 {
 	struct usb_hcd *hcd;
@@ -162,6 +315,7 @@ static int ehci_platform_probe(struct platform_device *dev)
 	struct ehci_platform_priv *priv;
 	struct ehci_hcd *ehci;
 	int err, irq, phy_num, clk = 0;
+	struct device *mdev = &dev->dev;
 
 	if (usb_disabled())
 		return -ENODEV;
@@ -314,7 +468,24 @@ static int ehci_platform_probe(struct platform_device *dev)
 		goto err_power;
 
 	device_wakeup_enable(hcd->self.controller);
+    #ifdef CONFIG_LTE
+	device_init_wakeup(&dev->dev, true); //210616 patch from RK. for usb not suspend
+    #endif
 	platform_set_drvdata(dev, hcd);
+	/* Attributes */
+	err = sysfs_create_group(&dev->dev.kobj, &ehci_wakeup_source_ctrl_group);
+	if (err) {
+		dev_err(&dev->dev, "Cannot create sysfs group: %d\n", err);
+		goto err_power;
+	}
+	gusbpdata = mdev;
+
+	/* Attributes */
+	err = sysfs_create_group(&dev->dev.kobj, &ehci_hcd_ctrl_group);
+	if (err) {
+		dev_err(&dev->dev, "Cannot create sysfs group: %d\n", err);
+		goto err_power;
+	}
 
 	return err;
 
@@ -432,7 +603,7 @@ static struct platform_driver ehci_platform_driver = {
 	.shutdown	= usb_hcd_platform_shutdown,
 	.driver		= {
 		.name	= "ehci-platform",
-		.pm	= &ehci_platform_pm_ops,
+		//.pm	= &ehci_platform_pm_ops,
 		.of_match_table = vt8500_ehci_ids,
 		.acpi_match_table = ACPI_PTR(ehci_acpi_match),
 	}

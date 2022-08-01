@@ -324,6 +324,9 @@ SYSCALL_DEFINE4(reboot, int, magic1, int, magic2, unsigned int, cmd,
 	if (ret)
 		return ret;
 
+    // 20210426: reboot: cmd=1126301404,magic=0xfee1dead/0x28121969, pm_power_off=psci_sys_poweroff+0x0/0x30
+    //pr_emerg("cmd=%x,magic=0x%x/0x%x, pm_power_off=%pF", cmd, magic1, magic2, pm_power_off);
+    
 	/* Instead of trying to make the power_off code look like
 	 * halt when pm_power_off is not set do it the easy way.
 	 */

@@ -35,6 +35,8 @@
 #include "tcon.h"
 #include "panel.h"
 
+#define RKEBC_DRV_VERSION		"3.03"
+
 #define EBC_SUCCESS			(0)
 #define EBC_ERROR			(-1)
 
@@ -49,20 +51,16 @@
 #define END_RESET			(0)
 #define END_PICTURE			(1)
 
-//ebc system ioctl command
+// ebc ioctl command
 #define GET_EBC_BUFFER (0x7000)
 #define SET_EBC_SEND_BUFFER (0x7001)
+#define GET_EBC_DRIVER_SN (0x7002)
 #define GET_EBC_BUFFER_INFO (0x7003)
-#define SET_EBC_NOT_FULL_NUM (0x7006)
-#define ENABLE_EBC_OVERLAY (0x7007)
-#define DISABLE_EBC_OVERLAY (0x7008)
+#define SET_EBC_AUTO_BG (0x7004)
+#define CLR_EBC_AUTO_BG (0x7005)
 
-//ebc debug ioctl command
-#define GET_EBC_CUR_BUFFER (0x7002)
-#define GET_EBC_AUTO_OLD_BUFFER (0x7004)
-#define GET_EBC_AUTO_NEW_BUFFER (0x7005)
-#define GET_EBC_AUTO_BG_BUFFER (0x7009)
-#define GET_EBC_AUTO_CUR_BUFFER (0x700a)
+#define EBC_DRIVER_SN "RK29_EBC_DRIVER_VERSION_1.00"
+#define EBC_DRIVER_SN_LEN sizeof(EBC_DRIVER_SN)
 
 #define ebc_printk(dir_of_file,lev,fmt) ebc_dbg_printk(dir_of_file,lev,fmt)
 
@@ -86,20 +84,10 @@ enum epd_refresh_mode {
 	EPD_DIRECT_PART	= 11,
 	EPD_DIRECT_A2	= 12,
 	EPD_AUTO_BG	= 16,
-	EPD_UNBLOCK	= 17,
-	EPD_PART_GL16 = 18,
-	EPD_PART_GLR16 = 19,
-	EPD_PART_GLD16 = 20,
-	EPD_FULL_GL16 = 21,
-	EPD_FULL_GLR16 = 22,
-	EPD_FULL_GLD16 = 23,
 };
 
 #define EBC_OFF      (0)
 #define EBC_ON        (1)
-#define EBC_FB_BLANK (2)
-#define EBC_FB_UNBLANK (3)
-
 struct logo_info
 {
 	int logo_pic_offset;
@@ -123,8 +111,6 @@ struct ebc_pwr_ops
 	int (*power_on)(void);
 	int (*power_down)(void);
 	int (*vcom_set)(int vcom_mv);
-	int (*power_hw_sleep)(void);
-	int (*power_hw_resume)(void);
 };
 struct ebc_temperateure_ops
 {
@@ -148,18 +134,20 @@ struct ebc_buf_info{
 	int win_x2;
 	int win_y2;
 	int rotate;
-	int width_mm;
-	int height_mm;
 }__packed;
+
+// ebc sn
+struct ebc_sn_info{
+	u32 key;
+	u32 sn_len;
+	char cip_sn[EBC_DRIVER_SN_LEN];
+};
 
 struct rk29_ebc_info{
 	int is_busy_now;
-	int task_restart;
-	int auto_refresh_done;
 	char frame_total;
 	char frame_bw_total;
-	int auto_need_refresh0;
-	int auto_need_refresh1;
+	short int auto_need_refresh;
 	int frame_left;
 	int ebc_send_count;
 	int ebc_mode;
@@ -172,8 +160,7 @@ struct rk29_ebc_info{
 	int  buffer_need_check;
 	int bits_per_pixel;
 	int ebc_irq_status;
-	int ebc_auto_work_done;
-	int ebc_auto_work_done1;
+	int ebc_auto_work;
 	int ebc_dsp_buf_status;// 1:have display buffer 0:no display buffer
 	struct device *dev;
 	struct fb_info *ebc_fb;
@@ -188,11 +175,10 @@ struct rk29_ebc_info{
 	int    *auto_image_new;
 	int    *auto_image_old;
 	int    *auto_image_bg;
-	int    *auto_image_cur;
-	u8   *auto_frame_buffer;
+	char   *auto_frame_buffer;
 	int   	*auto_image_fb;
 	void *auto_direct_buffer[EINK_FB_NUM];
-	int not_fullmode_num;
+
 	int ebc_power_status;
 	int ebc_last_display;
 	char *lut_ddr_vir;
@@ -219,14 +205,6 @@ struct rk29_ebc_info{
 	struct work_struct	auto_buffer_work;
 	struct work_struct	bootup_ani;
 	struct workqueue_struct *bootup_ani_wq;
-
-	/*early suspend*/
-	int is_early_suspend;
-	/*deep sleep*/
-	int is_deep_sleep;
-
-	int overlay_enable;
-	int overlay_start;
 };
 
 struct eink {
@@ -269,9 +247,5 @@ extern int get_bootup_ani_mode(void);
 extern int support_tps_3v3_always_alive(void);
 extern int map_auto_mode(void);
 extern int map_gray16_mode(void);
-
-int rk29_ebc_lowpower_pic_show(void);
-int rk29_ebc_show_white_background(void);
-int ebc_charge_disp(void);
 
 #endif

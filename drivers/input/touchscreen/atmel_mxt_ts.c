@@ -25,6 +25,7 @@
 #include <linux/i2c/atmel_mxt_ts.h>
 #include <linux/input/mt.h>
 #include <linux/input/ratta_mt.h>
+#include <linux/input/ratta_touch.h>
 #include <linux/interrupt.h>
 #include <linux/irq.h>
 #include <linux/of.h>
@@ -37,8 +38,14 @@
 #include <linux/of_gpio.h>
 #include <linux/proc_fs.h>
 #include <linux/suspend.h>
+#if defined(CONFIG_FB)
+#include <linux/notifier.h>
+#include <linux/fb.h>
+#endif
 
 #include <linux/proc_ratta.h>
+
+//#define WACOM_DISABLE_TOUCH
 
 /* Configuration file */
 #define MXT_CFG_MAGIC		"OBP_RAW V1"
@@ -277,6 +284,7 @@ struct mxt_flash {
 struct mxt_data {
 	struct i2c_client *client;
 	struct input_dev *input_dev;
+	struct device *dev;
 	char phys[64];		/* device physical location */
 	const struct mxt_platform_data *pdata;
 	struct mxt_object *object_table;
@@ -343,6 +351,8 @@ struct mxt_data {
 	u8 T100_reportid_min;
 	u8 T100_reportid_max;
 	u16 T107_address;
+	u16 T38_address;
+	u8 T38_version;
 
 	/* for reset handling */
 	struct completion reset_completion;
@@ -358,14 +368,22 @@ struct mxt_data {
 
 	/* Indicates whether device is updating configuration */
 	bool updating_config;
+#if defined(CONFIG_FB) || defined(CONFIG_DRM)
+    struct notifier_block fb_notif;
+#endif
+	struct delayed_work pm_resume_work;
 };
 
 extern int register_wacom_touch_event_notifier(struct notifier_block*);
 extern int unregister_wacom_touch_event_notifier(struct notifier_block*);
+extern bool fb_power_off(void);
+
 static int wacom_touch_event(struct notifier_block *, unsigned long, void *);
-static struct notifier_block wacom_touch_event_notifier = {
+static struct notifier_block __maybe_unused wacom_touch_event_notifier = {
 	.notifier_call = wacom_touch_event,
 };
+static int mxt_suspend(struct device *dev);
+static int mxt_resume(struct device *dev);
 static struct i2c_client *g_client = NULL;
 
 static size_t mxt_obj_size(const struct mxt_object *obj)
@@ -1181,12 +1199,12 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 
 		case MXT_T100_TYPE_ACTIVE_STYLUS:
 			/* Report input buttons */
-			if ((temp_y > 0) ||
-			    (ratta_get_bootmode() == RATTA_MODE_FACTORY)) {
-				input_report_key(input_dev, BTN_STYLUS,
-						 message[6] & MXT_T107_STYLUS_BUTTON0);
-				input_report_key(input_dev, BTN_STYLUS2,
-						 message[6] & MXT_T107_STYLUS_BUTTON1);
+			if ((temp_y > 0) ){//||
+			    //(ratta_get_bootmode() == RATTA_MODE_FACTORY)) {
+				//input_report_key(input_dev, BTN_STYLUS,
+				//		 message[6] & MXT_T107_STYLUS_BUTTON0);
+				//input_report_key(input_dev, BTN_STYLUS2,
+				//		 message[6] & MXT_T107_STYLUS_BUTTON1);
 			}
 
 			/* stylus in range, but position unavailable */
@@ -1231,8 +1249,8 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 
 	input_mt_slot(input_dev, id);
 
-	if ((temp_y < 0) &&
-	    (ratta_get_bootmode() != RATTA_MODE_FACTORY))
+	if ((temp_y < 0))// &&
+	    //(ratta_get_bootmode() != RATTA_MODE_FACTORY))
 		active = false ;
 
 	if (active) {
@@ -1249,14 +1267,19 @@ static void mxt_proc_t100_message(struct mxt_data *data, u8 *message)
 		input_report_abs(input_dev, ABS_MT_PRESSURE, pressure);
 		input_report_abs(input_dev, ABS_MT_DISTANCE, distance);
 		input_report_abs(input_dev, ABS_MT_ORIENTATION, orientation);
+		//if (ratta_has_idle())
+		//	mxt_input_sync(data);
 	} else {
 		dev_dbg(dev, "[%u] release\n", id);
 
 		/* close out slot */
 		input_mt_report_slot_state(input_dev, 0, 0);
+		//if (ratta_has_idle())
+		//	mxt_input_sync(data);
 	}
 
-	data->update_input = true;
+	//if (!ratta_has_idle())
+		data->update_input = true;
 }
 
 static void mxt_proc_t15_messages(struct mxt_data *data, u8 *msg)
@@ -2176,6 +2199,10 @@ static int mxt_parse_object_table(struct mxt_data *data,
 		case MXT_PROCI_ACTIVESTYLUS_T107:
 			data->T107_address = object->start_address;
 			break;
+		case MXT_SPT_USERDATA_T38:
+			data->T38_version = object->start_address;
+			printk("parse object t38 address:%x size:%x\n",object->start_address,object->size_minus_one);
+			break;
 		}
 
 		end_address = object->start_address
@@ -2588,6 +2615,12 @@ static int mxt_initialize_input_device(struct mxt_data *data)
 	if (data->max_y == 0)
 		data->max_y = 1871;
 
+	if ((data->pdata->xres > 0) &&
+	    (data->pdata->yres > 0)) {
+		data->max_x = data->pdata->xres;
+		data->max_y = data->pdata->yres;
+	}
+
 	dev_info(dev, "Touchscreen size X%uY%u\n", data->max_x, data->max_y);
 
 	/* Register input device */
@@ -2776,7 +2809,9 @@ static int mxt_initialize(struct mxt_data *data)
 		goto err_free_object_table;
 
 	if (data->cfg_name) {
-		error = request_firmware_nocache(THIS_MODULE,
+    	error = request_firmware_nowait(THIS_MODULE, true,
+//tanlq
+	//	error = request_firmware_nocache(THIS_MODULE,
 					data->cfg_name, &data->client->dev,
 					GFP_KERNEL, data, mxt_config_cb);
 		if (error) {
@@ -2901,6 +2936,14 @@ static ssize_t mxt_fw_version_show(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%u.%u.%02X\n",
 			 data->info->version >> 4, data->info->version & 0xf,
 			 data->info->build);
+}
+
+static ssize_t mxt_fw_new_show(struct device *dev,
+			       struct device_attribute *attr, char *buf)
+{
+	struct mxt_data *data = dev_get_drvdata(dev);
+
+	return sprintf(buf, "%s\n", data->pdata->fw_name ? data->pdata->fw_name : "");
 }
 
 /*  Version is returned as Major.Minor.Build.config_crc */
@@ -3321,7 +3364,7 @@ static ssize_t mxt_mem_access_write(struct file *filp, struct kobject *kobj,
 	return ret == 0 ? count : ret;
 }
 
-static DEVICE_ATTR(update_fw, S_IWUSR, NULL, mxt_update_fw_store);
+static DEVICE_ATTR(update_fw, S_IWUSR | S_IWGRP, NULL, mxt_update_fw_store);
 
 static struct attribute *mxt_fw_attrs[] = {
 	&dev_attr_update_fw.attr,
@@ -3333,6 +3376,7 @@ static const struct attribute_group mxt_fw_attr_group = {
 };
 
 static DEVICE_ATTR(fw_version, S_IRUGO, mxt_fw_version_show, NULL);
+static DEVICE_ATTR(fw_new, S_IRUGO, mxt_fw_new_show, NULL);
 static DEVICE_ATTR(version, S_IRUGO, mxt_version_show, NULL);
 static DEVICE_ATTR(hw_version, S_IRUGO, mxt_hw_version_show, NULL);
 static DEVICE_ATTR(object, S_IRUGO, mxt_object_show, NULL);
@@ -3346,6 +3390,7 @@ static DEVICE_ATTR(debug_notify, S_IRUGO, mxt_debug_notify_show, NULL);
 
 static struct attribute *mxt_attrs[] = {
 	&dev_attr_fw_version.attr,
+	&dev_attr_fw_new.attr,
 	&dev_attr_hw_version.attr,
 	&dev_attr_object.attr,
 	&dev_attr_update_cfg.attr,
@@ -3428,6 +3473,7 @@ static int mxt_start(struct mxt_data *data)
 
 	if (!data->suspended || data->in_bootloader)
 		return 0;
+	printk("````mxt_start:%d\n",data->pdata->suspend_mode);
 
 	switch (data->pdata->suspend_mode) {
 	case MXT_SUSPEND_T9_CTRL:
@@ -3479,6 +3525,7 @@ static int mxt_stop(struct mxt_data *data)
 
 	if (data->suspended || data->in_bootloader || data->updating_config)
 		return 0;
+	printk("````mxt_stop:%d\n",data->pdata->suspend_mode);
 
 	switch (data->pdata->suspend_mode) {
 	case MXT_SUSPEND_T9_CTRL:
@@ -3551,38 +3598,12 @@ static const struct mxt_platform_data *mxt_parse_dt(struct i2c_client *client)
 	if (!pdata)
 		return ERR_PTR(-ENOMEM);
 
-	pdata->gpio_power = of_get_named_gpio(np, "atmel,power-gpio", 0);
-	if (!gpio_is_valid(pdata->gpio_power)) {
-		dev_err(&client->dev, "no gpio_power pin available\n");
-	} else {
-		ret = devm_gpio_request_one(&client->dev, pdata->gpio_power,
-					    GPIOF_OUT_INIT_HIGH, "gpio-power");
-		if (ret < 0)
-			dev_err(&client->dev,
-				"request gpio_power failed,%d\n", ret);
-		else
-			msleep(100);
-	}
-
-	pdata->gpio_reset = of_get_named_gpio(np, "atmel,reset-gpio", 0);
-	if (!gpio_is_valid(pdata->gpio_reset)) {
-		dev_err(&client->dev, "no gpio_reset pin available\n");
-	} else {
-		ret = devm_gpio_request_one(&client->dev, pdata->gpio_reset,
-					    GPIOF_OUT_INIT_HIGH, "gpio-reset");
-		if (ret < 0) {
-			dev_err(&client->dev,
-				"request gpio_reset failed,%d\n", ret);
-		} else {
-			msleep(150);
-			gpio_direction_output(pdata->gpio_reset, 0);
-			msleep(100);
-			gpio_direction_output(pdata->gpio_reset, 1);
-			msleep(100);
-		}
-	}
+	pdata->gpio_power =  of_get_named_gpio_flags(np, "atmel,power-gpio", 0, NULL);
+	pdata->gpio_reset =  of_get_named_gpio_flags(np, "atmel,reset-gpio", 0, NULL);
 
 	of_property_read_string(np, "atmel,cfg_name", &pdata->cfg_name);
+	of_property_read_string(np, "atmel,cfg_name1", &pdata->cfg_name1);
+	of_property_read_string(np, "atmel,fw_name", &pdata->fw_name);
 
 	of_property_read_string(np, "atmel,input_name", &pdata->input_name);
 
@@ -3605,7 +3626,9 @@ static const struct mxt_platform_data *mxt_parse_dt(struct i2c_client *client)
 	}
 
 	of_property_read_u32(np, "atmel,suspend-mode", &pdata->suspend_mode);
-
+	of_property_read_u32(np, "atmel,xres", &pdata->xres);
+	of_property_read_u32(np, "atmel,yres", &pdata->yres);
+printk("mxt_parse_dt power:%ld reset:%ld\n",pdata->gpio_power,pdata->gpio_reset);
 	return pdata;
 }
 #else
@@ -3737,6 +3760,87 @@ static const struct mxt_platform_data *mxt_parse_acpi(struct i2c_client *client)
 	return ERR_PTR(-ENOENT);
 }
 #endif
+#if defined(CONFIG_FB)
+static int fb_notifier_callback(struct notifier_block *self,
+                                unsigned long event, void *data)
+{
+    struct fb_event *evdata = data;
+    int *blank = NULL;
+    struct mxt_data *ts_data = container_of(self, struct mxt_data,
+                                  fb_notif);
+	printk("fb_notifier_callback\n");
+
+    if (!evdata) {
+        printk("evdata is null");
+        return 0;
+    }
+	if (!ts_data) {
+        printk("ts_data is null");
+        return 0;
+    }
+
+    if (!(event == FB_EARLY_EVENT_BLANK || event == FB_EVENT_BLANK|| event == FB_EVENT_SUSPEND||event == FB_EVENT_RESUME)) {
+        printk("event(%lu) do not need process\n", event);
+        return 0;
+    }
+    blank = evdata->data;
+	printk("FB event:%lu,blank:%d\n", event, *blank);
+
+    switch (*blank) {
+    case FB_BLANK_UNBLANK:
+        if (FB_EARLY_EVENT_BLANK == event) {
+			mxt_resume(ts_data->dev);//快速power按键没有走resume
+            printk("resume: event = %lu, not care\n", event);
+			//fts_ts_resume(ts_data->dev);
+        } else if (FB_EVENT_BLANK == event) {
+            //queue_work(fts_data->ts_workqueue, &fts_data->resume_work);
+        } else if (FB_EVENT_SUSPEND == event) {
+        	cancel_delayed_work_sync(&ts_data->pm_resume_work);
+            mxt_suspend(ts_data->dev);
+        } else if (FB_EVENT_RESUME == event) {
+            mxt_resume(ts_data->dev);
+        }
+        break;
+    case FB_BLANK_POWERDOWN:
+//tanlq:deep sleep,power key
+        if (FB_EARLY_EVENT_BLANK == event) {
+            cancel_delayed_work_sync(&ts_data->pm_resume_work);
+            mxt_suspend(ts_data->dev);
+			printk("suspend: event = %lu, suspend\n", event);
+        } else if (FB_EVENT_BLANK == event) {
+        	//mxt_suspend(ts_data->dev);
+            printk("suspend: event = %lu, not care、suspend\n", event);
+        }
+        break;
+    default:
+        printk("FB BLANK(%d) do not need process\n", *blank);
+        break;
+    }
+
+    return 0;
+}
+#endif
+static void mxt_pm_resume_work_function(struct work_struct *work)
+{
+	struct mxt_data *data = container_of(work,
+		struct mxt_data, pm_resume_work.work);
+	struct input_dev *input_dev = data->input_dev;
+	//mutex_lock(&input_dev->mutex);
+
+#if 1
+	//TODO
+	gpio_direction_output(data->pdata->gpio_power, 1);
+	gpio_direction_output(data->pdata->gpio_reset, 1);
+	msleep(150);
+	gpio_direction_output(data->pdata->gpio_reset, 0);
+	msleep(100);
+	gpio_direction_output(data->pdata->gpio_reset, 1);
+	msleep(100);
+#endif
+	if (input_dev->users)
+		mxt_start(data);
+	//mutex_unlock(&input_dev->mutex);
+}
 
 static struct mxt_platform_data *mxt_default_pdata(struct i2c_client *client)
 {
@@ -3783,6 +3887,8 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	const struct mxt_platform_data *pdata;
 	char buf[256];
 	int error;
+	int buf1[64];
+	int i;
 
 	pdata = mxt_get_platform_data(client);
 	if (IS_ERR(pdata))
@@ -3796,24 +3902,32 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		 client->adapter->nr, client->addr);
 
 	data->client = client;
+	data->dev = &client->dev;
 	data->pdata = pdata;
 	i2c_set_clientdata(client, data);
 
-	if (data->pdata->cfg_name)
-		mxt_update_file_name(&data->client->dev,
-				     &data->cfg_name,
-				     data->pdata->cfg_name,
-				     strlen(data->pdata->cfg_name));
+	if (ratta_touch_exist(RATTA_TOUCH_IC_ATMEL)) {
+		error = -ENODEV;
+		dev_info(&client->dev, "Already have touch.\n");
+		goto err_free_mem;
+	}
 
-	init_completion(&data->chg_completion);
-	init_completion(&data->reset_completion);
-	init_completion(&data->crc_completion);
-	mutex_init(&data->debug_msg_lock);
+	gpio_request(pdata->gpio_power, "atmel,pwr-pin");
+	gpio_request(pdata->gpio_reset, "atmel,rst-pin");
 
+	gpio_direction_output(pdata->gpio_power, 1);
+	msleep(100);
+	gpio_direction_output(pdata->gpio_reset, 1);
+	msleep(150);
+	gpio_direction_output(pdata->gpio_reset, 0);
+	msleep(100);
+	gpio_direction_output(pdata->gpio_reset, 1);
+	msleep(100);
+	printk("mxt_probe power on\n");
 	if (pdata->suspend_mode == MXT_SUSPEND_REGULATOR) {
 		error = mxt_acquire_irq(data);
 		if (error)
-			goto err_free_mem;
+			goto err_free_gpio;
 
 		error = mxt_probe_regulators(data);
 		if (error)
@@ -3821,12 +3935,40 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 		disable_irq(data->irq);
 	}
+	error = __mxt_read_reg(client, 0x1d8, 0x40, buf1);
+	if(error){
+		goto err_free_irq;
+	}
+	data->T38_version = buf1[0];
+	for ( i = 0; i < 32; i++) {
+		printk("======mxt_probe version[%d]:%x cfg:%s\n",i,buf1[i],data->pdata->cfg_name);
+	}
+
+	if (data->pdata->cfg_name){
+		if (buf1[0] == 0x601){
+			mxt_update_file_name(&data->client->dev,
+				     &data->cfg_name,
+				     data->pdata->cfg_name1,
+				     strlen(data->pdata->cfg_name1));
+		}else{
+			mxt_update_file_name(&data->client->dev,
+			     &data->cfg_name,
+			     data->pdata->cfg_name,
+			     strlen(data->pdata->cfg_name));
+		}
+	}
+
+	init_completion(&data->chg_completion);
+	init_completion(&data->reset_completion);
+	init_completion(&data->crc_completion);
+	mutex_init(&data->debug_msg_lock);
+	//goto err_free_irq;
 
 	error = sysfs_create_group(&client->dev.kobj, &mxt_fw_attr_group);
 	if (error) {
 		dev_err(&client->dev, "Failure %d creating fw sysfs group\n",
 			error);
-		return error;
+		goto err_free_irq;
 	}
 
 	error = mxt_initialize(data);
@@ -3835,22 +3977,44 @@ static int mxt_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
         ratta_mt_probe(&client->dev);
 
+#if 1	//20210723: proc_symlink 无法建立 到 /sys 目录下的节点，只能建立 /proc 下面的连接。
+		// 此处禁止是屏蔽 __xlate_proc_name 里面的 WARNING: at fs/proc/generic.c:161 
 	memset(buf, 0, sizeof(buf));
 	snprintf(buf, sizeof(buf) - 1,
-		 "/sys/bus/i2c/devices/%s/version",
+		 "/sys/bus/i2c/devices/%s/version",  
 		 kobject_name(&client->dev.kobj));
+
+	// 20210723-LOG: mxt_probe:link file:/sys/bus/i2c/devices/1-004a/version
+	// __xlate_proc_name:cp=ratta/cap_fw_version,next=/cap_fw_version,len=5
+
+	printk("%s:link file:%s\n", __func__, buf);
 	proc_symlink("ratta/cap_fw_version", NULL, buf);
+#endif 
 
 	g_client = client;
+#ifdef WACOM_DISABLE_TOUCH
 	error = register_wacom_touch_event_notifier(&wacom_touch_event_notifier);
 	if (error)
 		dev_err(&client->dev, "Register wacom notifier failed,%d\n", error);
+#endif
+#if defined(CONFIG_FB)
+		data->fb_notif.notifier_call = fb_notifier_callback;
+		error = fb_register_client(&data->fb_notif);
+		if (error) {
+			dev_err(&client->dev, "Register notifier failed,%d\n", error);
+		}
+#endif
+	ratta_touch_set_ic(RATTA_TOUCH_IC_ATMEL);
+	INIT_DELAYED_WORK(&data->pm_resume_work, mxt_pm_resume_work_function);
 
 	return 0;
 
 err_free_irq:
 	if (data->irq)
 		free_irq(data->irq, data);
+err_free_gpio:
+	gpio_free(pdata->gpio_power);
+	gpio_free(pdata->gpio_reset);
 err_free_mem:
 	kfree(data);
 	return error;
@@ -3859,8 +4023,11 @@ err_free_mem:
 static int mxt_remove(struct i2c_client *client)
 {
 	struct mxt_data *data = i2c_get_clientdata(client);
+	const struct mxt_platform_data *pdata = mxt_get_platform_data(client);
 
+#ifdef WACOM_DISABLE_TOUCH
 	unregister_wacom_touch_event_notifier(&wacom_touch_event_notifier);
+#endif
 	g_client = NULL;
         ratta_mt_remove();
 	sysfs_remove_group(&client->dev.kobj, &mxt_fw_attr_group);
@@ -3874,12 +4041,14 @@ static int mxt_remove(struct i2c_client *client)
 	regulator_put(data->reg_vdd);
 	mxt_free_input_device(data);
 	mxt_free_object_table(data);
+	gpio_free(pdata->gpio_power);
+	gpio_free(pdata->gpio_reset);
 	kfree(data);
 
 	return 0;
 }
 
-static int __maybe_unused mxt_suspend(struct device *dev)
+static int mxt_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct mxt_data *data = i2c_get_clientdata(client);
@@ -3887,10 +4056,12 @@ static int __maybe_unused mxt_suspend(struct device *dev)
 
 	if (!input_dev)
 		return 0;
-
+printk("````mxt_suspend:%d\n",fb_power_off());
 	mutex_lock(&input_dev->mutex);
+	if(fb_power_off()){
 
-	if ((get_suspend_state() == PM_SUSPEND_IDLE)) {
+		}else{
+	//if ((get_suspend_state() == PM_SUSPEND_IDLE)) {
 		if (!irqd_is_wakeup_set(irq_get_irq_data(client->irq)))
 			enable_irq_wake(client->irq);
 		mutex_unlock(&input_dev->mutex);
@@ -3900,13 +4071,44 @@ static int __maybe_unused mxt_suspend(struct device *dev)
 
 	if (input_dev->users)
 		mxt_stop(data);
+#if 1
+		//TODO
+		gpio_direction_output(data->pdata->gpio_power, 0);
+		gpio_direction_output(data->pdata->gpio_reset, 0);
+#endif
 
 	mutex_unlock(&input_dev->mutex);
 
 	return 0;
 }
 
-static int __maybe_unused mxt_resume(struct device *dev)
+static int mxt_resume(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct mxt_data *data = i2c_get_clientdata(client);
+	struct input_dev *input_dev = data->input_dev;
+
+	if (!input_dev)
+		return 0;
+	printk("````mxt_resume:%d\n",fb_power_off());
+
+	mutex_lock(&input_dev->mutex);
+	if(fb_power_off()||(data->suspended)){
+	}else{
+	//if ((get_suspend_state() == PM_SUSPEND_IDLE)) {
+		if (irqd_is_wakeup_set(irq_get_irq_data(client->irq)))
+			disable_irq_wake(client->irq);
+		mutex_unlock(&input_dev->mutex);
+		dev_info(&client->dev, "disable irq wake\n");
+		return 0;
+	}
+	schedule_delayed_work(&data->pm_resume_work, 0); 
+	mutex_unlock(&input_dev->mutex);
+
+	return 0;
+}
+
+static int __maybe_unused mxt_suspend_by_wacom(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct mxt_data *data = i2c_get_clientdata(client);
@@ -3917,13 +4119,24 @@ static int __maybe_unused mxt_resume(struct device *dev)
 
 	mutex_lock(&input_dev->mutex);
 
-	if ((get_suspend_state() == PM_SUSPEND_IDLE)) {
-		if (irqd_is_wakeup_set(irq_get_irq_data(client->irq)))
-			disable_irq_wake(client->irq);
-		mutex_unlock(&input_dev->mutex);
-		dev_info(&client->dev, "disable irq wake\n");
+	if (input_dev->users)
+		mxt_stop(data);
+
+	mutex_unlock(&input_dev->mutex);
+
+	return 0;
+}
+
+static int __maybe_unused mxt_resume_by_wacom(struct device *dev)
+{
+	struct i2c_client *client = to_i2c_client(dev);
+	struct mxt_data *data = i2c_get_clientdata(client);
+	struct input_dev *input_dev = data->input_dev;
+
+	if (!input_dev)
 		return 0;
-	}
+
+	mutex_lock(&input_dev->mutex);
 
 	if (input_dev->users)
 		mxt_start(data);
@@ -3943,11 +4156,11 @@ static int wacom_touch_event(struct notifier_block *this, unsigned long event, v
 	}
 
 	if (event == 1) {
-		mxt_suspend(&g_client->dev);
-		dev_info(&g_client->dev, "Disabled by wacom.\n");
+		mxt_suspend_by_wacom(&g_client->dev);
+		//dev_info(&g_client->dev, "Disabled by wacom.\n");
 	} else {
-		mxt_resume(&g_client->dev);
-		dev_info(&g_client->dev, "Enabled by wacom.\n");
+		mxt_resume_by_wacom(&g_client->dev);
+		//dev_info(&g_client->dev, "Enabled by wacom.\n");
 	}
 
 	return 0;

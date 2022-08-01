@@ -1,0 +1,22 @@
+
+config HTFY_EBC
+	tristate "Htfyun SoftEbc support"
+	depends on DRM_ROCKCHIP
+	select EPD_TPS65185_SENSOR
+	help
+	The RK-SOFT-EBC for Htfyun.
+
+config HTFY_DUMP
+	tristate "Htfyun dump kernel-buffer support"
+	depends on HTFY_EBC
+	default no
+	help
+	dump kernel buffer by /dev/htdump_ctrl and /dev/htdump_data .
+	
+config HTFY_DEBUG
+	tristate "Htfyun debug prink-log support"
+	depends on HTFY_EBC
+	default yes
+	help
+	config the run-time debug-prink on demand.	
+	

@@ -1285,8 +1285,8 @@ static void rockchip_cpufreq_policy_init(struct cpufreq_policy *policy)
 	tunables->boostpulse_duration_val = 40 * USEC_PER_MSEC;
 	if (policy->cpu == 0) {
 		tunables->hispeed_freq = 1008000;
-		tunables->touchboostpulse_duration_val = 2000 * USEC_PER_MSEC;
-		tunables->touchboost_freq = 1512000;
+		tunables->touchboostpulse_duration_val = 500 * USEC_PER_MSEC;
+		tunables->touchboost_freq = 1200000;
 	} else {
 		tunables->hispeed_freq = 816000;
 	}

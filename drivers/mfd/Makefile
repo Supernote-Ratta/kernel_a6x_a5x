@@ -196,4 +196,5 @@ intel-soc-pmic-$(CONFIG_INTEL_PMC_IPC)	+= intel_soc_pmic_bxtwc.o
 obj-$(CONFIG_INTEL_SOC_PMIC)	+= intel-soc-pmic.o
 obj-$(CONFIG_MFD_MT6397)	+= mt6397-core.o
 obj-$(CONFIG_FUSB_30X)		+= fusb302.o
+obj-$(CONFIG_TIUSB_320)		+= tusb320.o
 obj-$(CONFIG_MFD_RK1000)	+= rk1000-core.o

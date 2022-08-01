@@ -563,18 +563,6 @@ config GPIO_DET
 	bool "gpio detection driver"
 	help
 	  Enable this driver will support gpio detection.
-	  
-config TI_TUSB320
-	tristate "Ti tusb320"
-	depends on I2C
-	help
-	  Say Y here if you have tusb320 typec chip,
-
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called tusb320.
-
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
@@ -588,4 +576,5 @@ source "drivers/misc/mic/Kconfig"
 source "drivers/misc/genwqe/Kconfig"
 source "drivers/misc/echo/Kconfig"
 source "drivers/misc/cxl/Kconfig"
+source "drivers/misc/htfyun/Kconfig"
 endmenu

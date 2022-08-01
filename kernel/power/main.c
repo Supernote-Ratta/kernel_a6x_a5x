@@ -325,8 +325,6 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 	return (s - buf);
 }
 
-static suspend_state_t suspend_state;
-
 static suspend_state_t decode_state(const char *buf, size_t n)
 {
 #ifdef CONFIG_SUSPEND
@@ -354,12 +352,6 @@ static suspend_state_t decode_state(const char *buf, size_t n)
 	return PM_SUSPEND_ON;
 }
 
-suspend_state_t get_suspend_state(void)
-{
-    return suspend_state;
-}
-EXPORT_SYMBOL_GPL(get_suspend_state);
-
 static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
@@ -376,9 +368,8 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 	}
 
 	state = decode_state(buf, n);
-	printk("%s: %s\n", __func__, buf);
-	suspend_state = state;
-
+	// 20191117-log: state_store:state=3,buf=mem
+	printk("%s:state=%d,buf=%s\n", __func__, state, buf);
 	if (state < PM_SUSPEND_MAX)
 		error = pm_suspend(state);
 	else if (state == PM_SUSPEND_MAX)
@@ -508,6 +499,9 @@ static ssize_t wake_lock_show(struct kobject *kobj,
 			      struct kobj_attribute *attr,
 			      char *buf)
 {
+    // 20180315,hsl,add print active source.
+    pm_print_active_wakeup_sources();
+
 	return pm_show_wakelocks(buf, true);
 }
 
@@ -537,6 +531,25 @@ static ssize_t wake_unlock_store(struct kobject *kobj,
 }
 
 power_attr(wake_unlock);
+
+
+static ssize_t wakeup_pending_show(struct kobject *kobj,
+				       struct kobj_attribute *attr,
+				       char *buf)
+{
+	ssize_t len;
+	char    temp[512];
+	bool pending = pm_get_active_wakeup_sources(temp, sizeof(temp)); // pm_wakeup_pending();
+	if(pending) {
+		len = sprintf(buf, "1 %s\n", temp);
+	} else {
+		len = sprintf(buf, "0\n");
+	}
+	//pr_info("pending_show: %s", buf);
+	return len;
+}
+
+power_attr_ro(wakeup_pending);
 
 #endif /* CONFIG_PM_WAKELOCKS */
 #endif /* CONFIG_PM_SLEEP */
@@ -619,6 +632,7 @@ static struct attribute * g[] = {
 #ifdef CONFIG_PM_WAKELOCKS
 	&wake_lock_attr.attr,
 	&wake_unlock_attr.attr,
+	&wakeup_pending_attr.attr, //20211116,hsl add.
 #endif
 #ifdef CONFIG_PM_DEBUG
 	&pm_test_attr.attr,

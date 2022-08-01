@@ -260,8 +260,9 @@ static int __dwc2_lowlevel_hw_enable(struct dwc2_hsotg *hsotg)
 	for (clk = 0; clk < DWC2_MAX_CLKS && hsotg->clks[clk]; clk++) {
 		ret = clk_prepare_enable(hsotg->clks[clk]);
 		if (ret) {
-			while (--clk >= 0)
-				clk_disable_unprepare(hsotg->clks[clk]);
+			printk("enable: %s->%d failed!\n",__func__,__LINE__);
+			//while (--clk >= 0)
+			//	clk_disable_unprepare(hsotg->clks[clk]);
 			return ret;
 		}
 	}
@@ -312,10 +313,14 @@ static int __dwc2_lowlevel_hw_disable(struct dwc2_hsotg *hsotg)
 	if (ret)
 		return ret;
 
-	for (clk = DWC2_MAX_CLKS - 1; clk >= 0; clk--)
-		if (hsotg->clks[clk])
-			clk_disable_unprepare(hsotg->clks[clk]);
-
+	for (clk = DWC2_MAX_CLKS - 1; clk >= 0; clk--) {
+		if (hsotg->clks[clk]) {
+			// 20210816: if disable clks,will crash at FT-TEST(when wakeup).
+			printk("disable: %s->%d,--don't disable!\n",__func__,__LINE__);
+			// clk_disable_unprepare(hsotg->clks[clk]);
+		}
+	}
+	
 	ret = regulator_bulk_disable(ARRAY_SIZE(hsotg->supplies),
 				     hsotg->supplies);
 
@@ -603,6 +608,9 @@ static int dwc2_driver_probe(struct platform_device *dev)
 	retval = dwc2_lowlevel_hw_enable(hsotg);
 	if (retval)
 		return retval;
+    #ifdef CONFIG_LTE
+	device_init_wakeup(hsotg->dev, true);//210616 patch from RK. for usb not suspend
+    #endif
 
 	retval = dwc2_get_dr_mode(hsotg);
 	if (retval)

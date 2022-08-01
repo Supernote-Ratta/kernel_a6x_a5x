@@ -18,6 +18,7 @@
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
+#include <linux/regulator/consumer.h>
 
 #include <dt-bindings/sensor-dev.h>
 
@@ -95,12 +96,14 @@ enum sensor_id {
 	LIGHT_ID_PHOTORESISTOR,
 	LIGHT_ID_US5152,
 	LIGHT_ID_STK3410,
+	LIGHT_ID_EM20918,
 
 	PROXIMITY_ID_ALL,
 	PROXIMITY_ID_AL3006,
 	PROXIMITY_ID_STK3171,
 	PROXIMITY_ID_AP321XX,
 	PROXIMITY_ID_STK3410,
+	PROXIMITY_ID_EM20918,
 
 	TEMPERATURE_ID_ALL,
 	TEMPERATURE_ID_MS5607,
@@ -180,6 +183,8 @@ struct sensor_private_data {
 	struct sensor_operate *ops;
 	struct file_operations fops;
 	struct miscdevice miscdev;
+	struct regulator *supply;
+	bool is_poweron;
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
 #endif

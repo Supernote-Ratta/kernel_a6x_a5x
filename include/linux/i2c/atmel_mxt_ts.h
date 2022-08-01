@@ -27,7 +27,10 @@ struct mxt_platform_data {
 	unsigned long gpio_reset;
 	unsigned long gpio_power;
 	const char *cfg_name;
+	const char *cfg_name1;
+	const char *fw_name;
 	const char *input_name;
+	u32 xres, yres;
 };
 
 #endif /* __LINUX_PLATFORM_DATA_ATMEL_MXT_TS_H */

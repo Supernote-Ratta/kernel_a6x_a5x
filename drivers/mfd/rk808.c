@@ -144,7 +144,7 @@ static int rk817_shutdown_prepare(struct rk808 *rk808)
 {
 	int ret;
 	uint active_pol;
-
+    printk("rk817_shutdown_prepare \n");
 	/* close rtc int when power off */
 	regmap_update_bits(rk808->regmap,
 			   RK817_INT_STS_MSK_REG1,
@@ -166,7 +166,7 @@ static int rk817_shutdown_prepare(struct rk808 *rk808)
 		/* the default active pol is high */
 		active_pol = rk808->sleep_pin_reverse ?
 				RK817_SLPPOL_L : RK817_SLPPOL_H;
-
+        printk("rk817_shutdown_prepare:%d\n",active_pol);
 		ret = regmap_update_bits(rk808->regmap,
 					 RK817_SYS_CFG(3),
 					 RK817_SLPPOL_MSK,
@@ -872,7 +872,7 @@ static void rk808_syscore_shutdown(void)
 	if (system_state == SYSTEM_POWER_OFF) {
 		/* power off supplies ! */
 		if (pm_shutdown) {
-			dev_info(&rk808_i2c_client->dev, "System power off\n");
+			dev_info(&rk808_i2c_client->dev, "rk817: System power off\n");
 			ret = pm_shutdown(rk808->regmap);
 			if (ret)
 				dev_err(&rk808_i2c_client->dev,
@@ -951,6 +951,28 @@ out:
 	return count;
 }
 
+#if 0
+static ssize_t rk8xx_reboot_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	int ret;
+	char cmd;
+	struct rk808 *rk808 = i2c_get_clientdata(rk808_i2c_client);
+	ret = sscanf(buf, "%c ", &cmd);
+	switch (cmd) {
+	case '1':
+		regmap_write(rk808->regmap, 0xf4, 0x1e);
+		break;
+	case '0':
+		break;
+	default:
+		pr_err("Unknown command\n");
+		break;
+	}
+    return count;
+}
+#endif
 static int rk817_pinctrl_init(struct device *dev, struct rk808 *rk808)
 {
 	int ret;
@@ -1053,7 +1075,7 @@ static int rk817_reboot_notifier_handler(struct notifier_block *nb,
 					 unsigned long action, void *cmd)
 {
 	struct rk817_reboot_data_t *data;
-	int ret;
+	int ret,val;
 	struct device *dev;
 
 	if (action != SYS_RESTART)
@@ -1064,6 +1086,8 @@ static int rk817_reboot_notifier_handler(struct notifier_block *nb,
 
 	data = container_of(nb, struct rk817_reboot_data_t, reboot_notifier);
 	dev = &data->rk808->i2c->dev;
+	regmap_read(data->rk808->regmap, RK817_SYS_CFG(3), &val);
+	printk("====rk817_reboot_notifier_handler :0x%x\n",val);
 
 	ret = regmap_update_bits(data->rk808->regmap, RK817_SYS_CFG(3),
 				 RK817_RST_FUNC_MSK, RK817_RST_FUNC_REG);
@@ -1097,14 +1121,28 @@ static void rk817_of_property_prepare(struct rk808 *rk808, struct device *dev)
 	if (rk808->sleep_pin_reverse)
 		dev_info(dev, "sleep pin reverse\n");
 
-	ret = of_property_read_u32(np, "pmic-reset-func", &func);
+	regmap_read(regmap, RK817_SYS_CFG(3), &val);
+	regmap_read(regmap, 0xf7, &msk);
 
-	msk = RK817_SLPPIN_FUNC_MSK | RK817_RST_FUNC_MSK;
+	// 20210714-LOG: pin reverse=0,SYS_CFG3=0x20,PWRON_KEY=0x06
+	dev_info(dev, "pin reverse=%d,SYS_CFG3=0x%02x,PWRON_KEY=0x%02x\n", rk808->sleep_pin_reverse,
+		val, msk);
+	msk = (msk & 0x8f)| (1<<6)|(1<<4); // long press powerkey: turnoff then reset.long press timeout: 01: 8sec
+	regmap_write(regmap, 0xf7, msk);
+	
+	ret = of_property_read_u32(np, "pmic-reset-func", &func);
+	
+	msk = RK817_SLPPIN_FUNC_MSK | RK817_RST_FUNC_MSK | RK817_SLPPOL_MSK;
 	val = SLPPIN_NULL_FUN;
 
 	if (!ret && func < RK817_RST_FUNC_CNT) {
 		val |= RK817_RST_FUNC_MSK &
 		       (func << RK817_RST_FUNC_SFT);
+		if(rk808->sleep_pin_reverse) {
+             val |= RK817_SLPPOL_H ;
+         } else {              
+             val |=RK817_SLPPOL_L;
+         }
 	} else {
 		val |= RK817_RST_FUNC_REG;
 	}
@@ -1124,9 +1162,16 @@ static void rk817_of_property_prepare(struct rk808 *rk808, struct device *dev)
 }
 
 static struct kobject *rk8xx_kobj;
+#if 0
+static struct device_attribute rk8xx_attrs[] ={
+		__ATTR(rk8xx_dbg, 0200, NULL, rk8xx_dbg_store),
+		__ATTR(reboot, 0664, NULL, rk8xx_reboot_store),
+};
+#else
 static struct device_attribute rk8xx_attrs =
 		__ATTR(rk8xx_dbg, 0200, NULL, rk8xx_dbg_store);
 
+#endif
 static const struct of_device_id rk808_of_match[] = {
 	{ .compatible = "rockchip,rk805" },
 	{ .compatible = "rockchip,rk808" },
@@ -1189,7 +1234,9 @@ static int rk808_probe(struct i2c_client *client,
 	}
 
 	rk808->variant = ((msb << 8) | lsb) & RK8XX_ID_MSK;
-	dev_info(&client->dev, "Pmic Chip id: 0x%lx\n", rk808->variant);
+
+	// 20210720-LOG: rk808 0-0020: Pmic Chip id: 0x8170
+	// dev_info(&client->dev, "Pmic Chip id: 0x%lx\n", rk808->variant);
 
 	/* set Chip platform init data*/
 	switch (rk808->variant) {
@@ -1288,7 +1335,7 @@ static int rk808_probe(struct i2c_client *client,
 			return ret;
 		}
 
-		dev_info(&client->dev, "source: on=0x%02x, off=0x%02x\n",
+		dev_info(&client->dev, "rk817_source: on=0x%02x, off=0x%02x\n",
 			 on, off);
 	}
 
@@ -1369,11 +1416,21 @@ static int rk808_probe(struct i2c_client *client,
 
 	rk8xx_kobj = kobject_create_and_add("rk8xx", NULL);
 	if (rk8xx_kobj) {
+#if 0
+        for (i = 0; i < ARRAY_SIZE(rk8xx_attrs); i++) {
+    		ret = sysfs_create_file(rk8xx_kobj, &rk8xx_attrs[i].attr);
+        }
+#else
 		ret = sysfs_create_file(rk8xx_kobj, &rk8xx_attrs.attr);
+#endif
 		if (ret)
 			dev_err(&client->dev, "create rk8xx sysfs error\n");
 	}
 
+	// 20210426-LOG: pm_shutdown_prepare=rk817_shutdown_prepare+0x0/0x108,pm_power_off=psci_sys_poweroff+0x0/0x30,pm_shutdown=          (null)
+    //dev_err(&client->dev, "pm_shutdown_prepare=%pF,pm_power_off=%pF,pm_shutdown=%pF\n",
+    //    pm_shutdown_prepare, pm_power_off, pm_shutdown);
+    
 	return 0;
 
 err_irq:
@@ -1387,7 +1444,8 @@ static int rk808_suspend(struct device *dev)
 {
 	int i, ret;
 	struct rk808 *rk808 = i2c_get_clientdata(rk808_i2c_client);
-
+    uint active_pol;
+	printk("====rk808_suspend\n");
 	for (i = 0; i < suspend_reg_num; i++) {
 		ret = regmap_update_bits(rk808->regmap,
 					 suspend_reg[i].addr,
@@ -1399,17 +1457,36 @@ static int rk808_suspend(struct device *dev)
 			return ret;
 		}
 	}
+		/* the default active pol is high */
+		active_pol = rk808->sleep_pin_reverse ?
+				RK817_SLPPOL_L : RK817_SLPPOL_H;
 
+	/*
+	许盛飞.手机  9:35:13  
+	要先选择pmicsleep 的功能是 NULL（空的功能），然后在将pmic sleep 拉低，然后在配置成pmicsleep 高有效
+	嗯		from SLPPIN_SLP_FUN to SLPPIN_NULL_FUN OK!
+	至少这个点是需要这样改的
+	*/
 	if (rk808->pins && rk808->pins->p && rk808->pins->sleep) {
-		ret = regmap_update_bits(rk808->regmap,
-					 RK817_SYS_CFG(3),
-					 RK817_SLPPIN_FUNC_MSK,
-					 SLPPIN_SLP_FUN);
-		if (ret) {
-			dev_err(dev, "suspend: config SLPPIN_NULL_FUN error!\n");
-			return -1;
-		}
-
+        if (rk808->pins && rk808->pins->p && rk808->pins->reset) {
+    		ret = regmap_update_bits(rk808->regmap,
+    					 RK817_SYS_CFG(3),
+    					 RK817_SLPPIN_FUNC_MSK,
+    					 SLPPIN_NULL_FUN); //20191231-hsl,fix crash when sleep.
+    		if (ret) {
+    			dev_err(dev, "suspend: config SLPPIN_NULL_FUN error!\n");
+    			return -1;
+    		}
+        }else{//sn
+            ret = regmap_update_bits(rk808->regmap,
+    					 RK817_SYS_CFG(3),
+    					 RK817_SLPPIN_FUNC_MSK,
+    					 SLPPIN_SLP_FUN);
+    		if (ret) {
+    			dev_err(dev, "suspend: config SLPPIN_NULL_FUN error!\n");
+    			return -1;
+    		}
+        }
 		ret = regmap_update_bits(rk808->regmap,
 					 RK817_SYS_CFG(3),
 					 RK817_SLPPOL_MSK,
@@ -1434,6 +1511,7 @@ static int rk808_resume(struct device *dev)
 	int i, ret;
 	uint active_pol;
 	struct rk808 *rk808 = i2c_get_clientdata(rk808_i2c_client);
+	printk("====rk808_resume\n");
 
 	for (i = 0; i < resume_reg_num; i++) {
 		ret = regmap_update_bits(rk808->regmap,
@@ -1451,7 +1529,7 @@ static int rk808_resume(struct device *dev)
 		ret = regmap_update_bits(rk808->regmap,
 					 RK817_SYS_CFG(3),
 					 RK817_SLPPIN_FUNC_MSK,
-					 SLPPIN_NULL_FUN);
+					 SLPPIN_NULL_FUN);  
 		if (ret) {
 			dev_err(dev, "resume: config SLPPIN_NULL_FUN error!\n");
 			return -1;

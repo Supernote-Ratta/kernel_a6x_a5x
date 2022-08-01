@@ -643,6 +643,21 @@ config SND_SOC_RT5640
 	tristate "Realtek ALC5640 CODEC"
 	depends on I2C
 
+config SND_ADC_ES7210
+	tristate "htfyun ADC ES7210"
+	default n
+	depends on I2C
+
+config SND_ADC_ES8156
+	tristate "htfyun ADC ES8156"
+	default n
+	depends on I2C
+
+config SND_AMPLIFIER_AW87519
+	tristate "htfyun Audio Amplifier AW87519"
+	default n
+	depends on I2C
+
 config SND_SOC_RT5645
         tristate
 

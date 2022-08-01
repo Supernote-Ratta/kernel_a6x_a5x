@@ -46,10 +46,12 @@ static void rockchip_pm_virt_pwroff_prepare(void)
 		return;
 	}
 
+	// drivers/firmware/rockchip_sip.c
 	sip_smc_set_suspend_mode(VIRTUAL_POWEROFF, 0, 1);
 	sip_smc_virtual_poweroff();
 }
 
+//extern int __init vendor_storage_init(void);
 static int __init pm_config_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match_id;
@@ -142,14 +144,17 @@ static int __init pm_config_probe(struct platform_device *pdev)
 	    virtual_poweroff_en)
 		pm_power_off_prepare = rockchip_pm_virt_pwroff_prepare;
 
+	//if( pm_suspend_ultra && pm_suspend_regulator_ultra) vendor_storage_init();
 	return 0;
 }
 
-extern suspend_state_t get_suspend_state(void);
-
+//extern suspend_state_t get_suspend_state(void);
+extern bool fb_power_off(void);
 static int pm_config_suspend(struct platform_device *dev,
 				 pm_message_t state)
 {
+
+#if 0
 	suspend_state_t suspend_state;
 
 	suspend_state = get_suspend_state();
@@ -166,7 +171,25 @@ static int pm_config_suspend(struct platform_device *dev,
                                          pm_suspend_mem,
                                          0);
 	}
-
+#else 
+	bool is_ultra = false;
+	if(fb_power_off()) {
+		if(pm_suspend_ultra && pm_suspend_regulator_ultra) {
+			sip_smc_set_suspend_mode(SUSPEND_MODE_CONFIG,
+					 pm_suspend_ultra,
+					 0);
+			sip_smc_set_suspend_mode(PWM_REGULATOR_CONFIG,
+					 pm_suspend_regulator_ultra,
+					 0);
+			is_ultra = true;
+		}
+	}
+	if(!is_ultra){
+		sip_smc_set_suspend_mode(SUSPEND_MODE_CONFIG,
+                     pm_suspend_mem,
+                     0);
+	}
+#endif 
 	return 0;
 }
 

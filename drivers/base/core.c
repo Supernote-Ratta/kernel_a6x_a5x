@@ -711,6 +711,7 @@ void device_initialize(struct device *dev)
 #ifdef CONFIG_GENERIC_MSI_IRQ
 	INIT_LIST_HEAD(&dev->msi_list);
 #endif
+    dev->xresume = 0; // 20210529,hsl add.
 }
 EXPORT_SYMBOL_GPL(device_initialize);
 
@@ -1134,10 +1135,14 @@ int device_add(struct device *dev)
 
 	kobject_uevent(&dev->kobj, KOBJ_ADD);
 	bus_probe_device(dev);
-	if (parent)
+	if (parent) {
 		klist_add_tail(&dev->p->knode_parent,
 			       &parent->p->klist_children);
-
+	    if(parent->xresume) {
+	         dev->xresume = parent->xresume;
+	         pr_info("xresume device: '%s' (P:%s): %s\n", dev_name(dev), dev_name(parent), __func__);
+	    }
+    }
 	if (dev->class) {
 		mutex_lock(&dev->class->p->mutex);
 		/* tie the class to the device */

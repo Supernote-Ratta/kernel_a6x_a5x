@@ -13,11 +13,16 @@
 
 extern int get_wifi_chip_type(void);
 
+char wifi_chip_type_string_ht[64]={0};
+EXPORT_SYMBOL(wifi_chip_type_string_ht);
 static ssize_t wifi_chip_read(struct class *cls, struct class_attribute *attr, char *_buf)
 {
     int count = 0;
-    int type = get_wifi_chip_type();
+    //int type = get_wifi_chip_type();
 
+	    printk("Current WiFi chip is wifi_chip_read:%s.\n",wifi_chip_type_string_ht);
+    count = sprintf(_buf, "%s", wifi_chip_type_string_ht);
+#if 0
 	if(type == WIFI_RK901) {
 	    count = sprintf(_buf, "%s", "APRK901");
 	    printk("Current WiFi chip is APRK901.\n");
@@ -137,7 +142,7 @@ static ssize_t wifi_chip_read(struct class *cls, struct class_attribute *attr, c
 	    count = sprintf(_buf, "%s", "ESP8089");
 	    printk("Current WiFi chip is ESP8089.\n");
 	}
-
+#endif
     return count;
 }
 

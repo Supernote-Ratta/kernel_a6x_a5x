@@ -388,7 +388,10 @@ struct device_type usb_device_type = {
 	.uevent =	usb_dev_uevent,
 	.devnode = 	usb_devnode,
 #ifdef CONFIG_PM
-	.pm =		&usb_device_pm_ops,
+    #ifdef CONFIG_LTE // 20200103,part opt for fast-wakeup.
+	//can not wakeup 4g module
+	.pm =		&usb_device_pm_ops,  //20191204,we will power off usb-host,so don't set this for fast-wakup.
+    #endif 
 #endif
 };
 
@@ -440,6 +443,7 @@ struct usb_device *usb_alloc_dev(struct usb_device *parent,
 	}
 
 	device_initialize(&dev->dev);
+	dev->dev.xresume = true; // 20210529,hsl add.
 	dev->dev.bus = &usb_bus_type;
 	dev->dev.type = &usb_device_type;
 	dev->dev.groups = usb_device_groups;

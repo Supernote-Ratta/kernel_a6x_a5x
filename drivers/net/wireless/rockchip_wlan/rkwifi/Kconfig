@@ -13,3 +13,10 @@ config AP6XXX
 	  If you choose to build a module, it'll be called dhd. Say M if
 	  unsure.
 
+config CYW_HT
+	bool "cyw wifi/bt driver,use ap62xx driver"
+	default n
+	---help---
+	  This module adds support for wireless adapters based on
+	  Broadcom ap6xxx chipset.
+	  If use cyw ic,open it.

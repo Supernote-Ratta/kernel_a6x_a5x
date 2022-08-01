@@ -13,7 +13,7 @@
 #define EVDEV_MINOR_BASE	64
 #define EVDEV_MINORS		32
 #define EVDEV_MIN_BUFFER_SIZE	64U
-#define EVDEV_BUF_PACKETS	8
+#define EVDEV_BUF_PACKETS	32 // 8 // 20210601,hsl to avoid SYN_DROPPED.
 
 #include <linux/poll.h>
 #include <linux/sched.h>
@@ -247,7 +247,6 @@ static void __pass_event(struct evdev_client *client,
 		client->buffer[client->tail].value = 0;
 
 		client->packet_head = client->tail;
-		pr_info("SYN_DROPPED\n");
 	}
 
 	if (event->type == EV_SYN && event->code == SYN_REPORT) {
@@ -502,9 +501,6 @@ static int evdev_open(struct inode *inode, struct file *file)
 					bufsize * sizeof(struct input_event);
 	struct evdev_client *client;
 	int error;
-
-	if (size >= (2 * 1024 * 1024))
-		pr_warn("Really a big client.\n");
 
 	client = kzalloc(size, GFP_KERNEL | __GFP_NOWARN);
 	if (!client)

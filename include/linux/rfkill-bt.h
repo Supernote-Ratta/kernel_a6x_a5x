@@ -65,6 +65,7 @@ struct rfkill_rk_platform_data {
     struct rfkill_rk_irq    wake_host_irq;  // BT wakeup host
     struct rfkill_rk_gpio   rts_gpio;
     struct clk              *ext_clk;
+	bool only_bt;
 };
 
 int rfkill_get_bt_power_state(int *power, bool *toggle);

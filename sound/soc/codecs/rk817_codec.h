@@ -209,4 +209,7 @@ struct rk817_init_bit_typ {
 	unsigned int init_bit;
 };
 
+//es7210 need the mclk for its i2c
+int rk817_set_mclk_enabled(bool enabled);
+
 #endif /* __RK817_CODEC_H__ */

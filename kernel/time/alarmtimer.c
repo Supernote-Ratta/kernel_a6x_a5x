@@ -25,6 +25,7 @@
 #include <linux/posix-timers.h>
 #include <linux/workqueue.h>
 #include <linux/freezer.h>
+#include <linux/htfy_dbg.h>  // 20191031,hsl add for fb_check
 
 /**
  * struct alarm_base - Alarm timer bases
@@ -225,6 +226,9 @@ static int alarmtimer_suspend(struct device *dev)
 	struct rtc_device *rtc;
 	int i;
 	int ret;
+
+	// 20191226,hsl add.
+	if(fb_power_off() && !alarmtimer_rtc_wakeup_enabled()) return 0;
 
 	spin_lock_irqsave(&freezer_delta_lock, flags);
 	min = freezer_delta;

@@ -850,6 +850,7 @@ struct device {
 
 	bool			offline_disabled:1;
 	bool			offline:1;
+	bool			xresume:1;  // 20210529,hsl add.
 };
 
 static inline struct device *kobj_to_dev(struct kobject *kobj)

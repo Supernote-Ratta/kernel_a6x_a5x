@@ -581,6 +581,8 @@ static int rfkill_rk_setup_gpio(struct rksdmmc_gpio *gpio, const char* prefix, c
             LOG("Failed to get %s gpio.\n", gpio->name);
             return -1;
         }
+    } else {
+        LOG("%s gpio is Not valide!\n", gpio->name);
     }
 
     return 0;
@@ -778,23 +780,23 @@ static int rfkill_wlan_probe(struct platform_device *pdev)
     LOG("%s: init gpio\n", __func__);
 
     if (!pdata->mregulator.power_ctrl_by_pmu) {
-	ret = rfkill_rk_setup_gpio(&pdata->vbat_n, wlan_name, "wlan_vbat");
-	if (ret)
-		goto fail_alloc;
-
+    	ret = rfkill_rk_setup_gpio(&pdata->vbat_n, wlan_name, "wlan_vbat");
+    	if (ret) {
+    		goto fail_alloc;
+        }
         ret = rfkill_rk_setup_gpio(&pdata->power_n, wlan_name, "wlan_poweren");
-	if (ret)
-		goto fail_alloc;
+	    if (ret)
+		    goto fail_alloc;
 
         ret = rfkill_rk_setup_gpio(&pdata->reset_n, wlan_name, "wlan_reset");
-	if (ret)
-		goto fail_alloc;
+    	if (ret)
+    		goto fail_alloc;
     }
 
     wake_lock_init(&(rfkill->wlan_irq_wl), WAKE_LOCK_SUSPEND, "rfkill_wlan_wake");
 
     if (gpio_is_valid(pdata->vbat_n.io)) {
-	gpio_direction_output(pdata->vbat_n.io, pdata->vbat_n.enable);
+	    gpio_direction_output(pdata->vbat_n.io, pdata->vbat_n.enable);
     }
     // Turn off wifi power as default
     if (gpio_is_valid(pdata->power_n.io))
@@ -817,7 +819,7 @@ static int rfkill_wlan_probe(struct platform_device *pdev)
     
     fb_register_client(&rfkill_wlan_fb_notifier);
 
-    LOG("Exit %s\n", __func__);
+    LOG("Exit %s OK!\n", __func__);
 
 	return 0;
 
@@ -871,6 +873,7 @@ static int rfkill_wlan_remove(struct platform_device *pdev)
 	return 0;
 }
 
+/*
 static int rfkill_wlan_suspend(struct platform_device *pdev, pm_message_t state)
 {
     LOG("Enter %s\n", __func__);
@@ -882,6 +885,7 @@ static int rfkill_wlan_resume(struct platform_device *pdev)
     LOG("Enter %s\n", __func__);
     return 0;
 }
+*/
 
 #ifdef CONFIG_OF
 static struct of_device_id wlan_platdata_of_match[] = {
@@ -894,8 +898,8 @@ MODULE_DEVICE_TABLE(of, wlan_platdata_of_match);
 static struct platform_driver rfkill_wlan_driver = {
 	.probe = rfkill_wlan_probe,
 	.remove = rfkill_wlan_remove,
-    .suspend = rfkill_wlan_suspend,
-    .resume = rfkill_wlan_resume,
+    //.suspend = rfkill_wlan_suspend,
+    //.resume = rfkill_wlan_resume,
 	.driver = {
 		.name = "wlan-platdata",
 		.owner = THIS_MODULE,

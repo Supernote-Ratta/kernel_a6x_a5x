@@ -460,6 +460,21 @@ config BACKLIGHT_BD6107
 	help
 	  If you have a Rohm BD6107 say Y to enable the backlight driver.
 
+config BACKLIGHT_SGM37604A
+	tristate "SGM37604A Backlight"
+	depends on I2C
+	help
+	  If you have a SGM37604A say Y to enable the backlight driver.
+
+config FRONTLIGHT_FP9966
+	tristate "htfyun fp9966 Frontlight Driver"
+	depends on I2C
+	help
+	  If you have a ebook frontlight connected to the dev output of
+	  the fp9966, say Y here to enable this driver.
+
+	  To compile this driver as a module, choose M here.
+
 endif # BACKLIGHT_CLASS_DEVICE
 
 endif # BACKLIGHT_LCD_SUPPORT

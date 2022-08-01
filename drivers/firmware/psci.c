@@ -25,6 +25,7 @@
 #include <linux/slab.h>
 #include <linux/suspend.h>
 #include <linux/regulator/machine.h>
+#include <linux/delay.h>
 
 #include <uapi/linux/psci.h>
 
@@ -224,7 +225,7 @@ static int get_set_conduit_method(struct device_node *np)
 	if (!strcmp("hvc", method)) {
 		invoke_psci_fn = __invoke_psci_fn_hvc;
 	} else if (!strcmp("smc", method)) {
-		invoke_psci_fn = __invoke_psci_fn_smc;
+		invoke_psci_fn = __invoke_psci_fn_smc; // 20210426,use smc.
 	} else {
 		pr_warn("invalid \"method\" property: %s\n", method);
 		return -EINVAL;
@@ -239,7 +240,12 @@ static void psci_sys_reset(enum reboot_mode reboot_mode, const char *cmd)
 
 static void psci_sys_poweroff(void)
 {
-	invoke_psci_fn(PSCI_0_2_FN_SYSTEM_OFF, 0, 0, 0);
+    //dump_stack();
+    while(true) {
+	    invoke_psci_fn(PSCI_0_2_FN_SYSTEM_OFF, 0, 0, 0);
+	    mdelay(200); //msleep(200);
+	    pr_err("%s: shutdown Failed,should Never Happen!!\n", __func__);
+	}
 }
 
 static int __init psci_features(u32 psci_func_id)

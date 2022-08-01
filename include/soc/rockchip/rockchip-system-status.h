@@ -18,5 +18,6 @@ int rockchip_unregister_system_status_notifier(struct notifier_block *nb);
 void rockchip_set_system_status(unsigned long status);
 void rockchip_clear_system_status(unsigned long status);
 unsigned long rockchip_get_system_status(void);
+void rockchip_set_system_status_force(unsigned long status);
 
 #endif

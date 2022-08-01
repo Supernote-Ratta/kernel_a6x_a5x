@@ -17,6 +17,8 @@
 #include <linux/of_gpio.h>
 #include <linux/regmap.h>
 #include <linux/power_supply.h>
+#include <linux/usb/otg.h>
+#include <linux/htfy_dbg.h>
 
 #include "fusb302.h"
 
@@ -39,15 +41,6 @@
 #define FLAG_EVENT		(EVENT_RX | EVENT_TIMER_MUX | \
 				 EVENT_TIMER_STATE)
 
-#define PIN_MAP_A		BIT(0)
-#define PIN_MAP_B		BIT(1)
-#define PIN_MAP_C		BIT(2)
-#define PIN_MAP_D		BIT(3)
-#define PIN_MAP_E		BIT(4)
-#define PIN_MAP_F		BIT(5)
-
-#define PIN_MAP_MF_MASK		0x2a
-
 #define PACKET_IS_CONTROL_MSG(header, type) \
 		(PD_HEADER_CNT(header) == 0 && \
 		 PD_HEADER_TYPE(header) == type)
@@ -56,11 +49,61 @@
 		(PD_HEADER_CNT(header) != 0 && \
 		 PD_HEADER_TYPE(header) == type)
 
-#define VDM_DP_GET_RECEPTACLE(mode)	((mode >> 6) & 0x1)
-#define VDM_DP_MULTIFUCTION(status)	((status >> 4) & 0x1)
+/*
+ * DisplayPort modes capabilities
+ * -------------------------------
+ * <31:24> : Reserved (always 0).
+ * <23:16> : UFP_D pin assignment supported
+ * <15:8>  : DFP_D pin assignment supported
+ * <7>     : USB 2.0 signaling (0b=yes, 1b=no)
+ * <6>     : Plug | Receptacle (0b == plug, 1b == receptacle)
+ * <5:2>   : xxx1: Supports DPv1.3, xx1x Supports USB Gen 2 signaling
+ *	     Other bits are reserved.
+ * <1:0>   : signal direction ( 00b=rsv, 01b=sink, 10b=src 11b=both )
+ */
+#define PD_DP_PIN_CAPS(x)	((((x) >> 6) & 0x1) ? (((x) >> 16) & 0x3f) \
+				 : (((x) >> 8) & 0x3f))
+#define PD_DP_SIGNAL_GEN2(x)	(((x) >> 3) & 0x1)
+
+#define MODE_DP_PIN_A		BIT(0)
+#define MODE_DP_PIN_B		BIT(1)
+#define MODE_DP_PIN_C		BIT(2)
+#define MODE_DP_PIN_D		BIT(3)
+#define MODE_DP_PIN_E		BIT(4)
+#define MODE_DP_PIN_F		BIT(5)
+
+/* Pin configs B/D/F support multi-function */
+#define MODE_DP_PIN_MF_MASK	(MODE_DP_PIN_B | MODE_DP_PIN_D | MODE_DP_PIN_F)
+/* Pin configs A/B support BR2 signaling levels */
+#define MODE_DP_PIN_BR2_MASK	(MODE_DP_PIN_A | MODE_DP_PIN_B)
+/* Pin configs C/D/E/F support DP signaling levels */
+#define MODE_DP_PIN_DP_MASK	(MODE_DP_PIN_C | MODE_DP_PIN_D | \
+				 MODE_DP_PIN_E | MODE_DP_PIN_F)
+
+/*
+ * DisplayPort Status VDO
+ * ----------------------
+ * <31:9> : Reserved (always 0).
+ * <8>    : IRQ_HPD : 1 == irq arrived since last message otherwise 0.
+ * <7>    : HPD state : 0 = HPD_LOW, 1 == HPD_HIGH
+ * <6>    : Exit DP Alt mode: 0 == maintain, 1 == exit
+ * <5>    : USB config : 0 == maintain current, 1 == switch to USB from DP
+ * <4>    : Multi-function preference : 0 == no pref, 1 == MF preferred.
+ * <3>    : enabled : is DPout on/off.
+ * <2>    : power low : 0 == normal or LPM disabled, 1 == DP disabled for LPM
+ * <1:0>  : connect status : 00b ==  no (DFP|UFP)_D is connected or disabled.
+ *	    01b == DFP_D connected, 10b == UFP_D connected, 11b == both.
+ */
+#define PD_VDO_DPSTS_HPD_IRQ(x)	(((x) >> 8) & 0x1)
+#define PD_VDO_DPSTS_HPD_LVL(x)	(((x) >> 7) & 0x1)
+#define PD_VDO_DPSTS_MF_PREF(x)	(((x) >> 4) & 0x1)
+
+#define CC_STATE_ROLE(chip)	(((chip)->cc_state) & CC_STATE_TOGSS_ROLE)
 
 static u8 fusb30x_port_used;
 static struct fusb30x_chip *fusb30x_port_info[256];
+
+extern ssize_t otg_mode_switch(enum usb_dr_mode new_dr_mode);
 
 static bool is_write_reg(struct device *dev, unsigned int reg)
 {
@@ -222,7 +265,39 @@ void fusb_irq_enable(struct fusb30x_chip *chip)
 	}
 	spin_unlock_irqrestore(&chip->irq_lock, irqflags);
 }
+#if 0
+/*
+ * Set the dwc2 otg mode by operating the otg_mode device node.
+ */
+static void rockchip_dwc2_otg_mode_switch(struct fusb30x_chip *chip,
+					  bool ufp, bool dfp)
+{
+	static const char *buf_host = "host";
+	static const char *buf_device = "peripheral";
+	static const char *buf_otg = "otg";
 
+	if (g_device) {
+		if (ufp && !dfp) {
+			/* Device Mode */
+			dev_dbg(chip->dev, "set Device Mode.\n");
+			otg_mode_store(g_device, &dev_attr_otg_mode, buf_device, 11);
+		} else if (!ufp && dfp) {
+			/* Host Mode */
+			dev_dbg(chip->dev, "set Host Mode.\n");
+			otg_mode_store(g_device, &dev_attr_otg_mode, buf_host, 5);
+		} else {
+			/* otg Mode */
+			dev_dbg(chip->dev, "no need set mode.\n");
+			otg_mode_store(g_device, &dev_attr_otg_mode, buf_otg, 4);
+		}
+	} else {
+		dev_err(chip->dev, "%s: g_device == NULL.", __func__);
+		return;
+	}
+}
+#endif
+extern void dwc2_handle_cc_intr(struct dwc2_hsotg *hsotg,u32 gintsts);
+extern void dwc2_hsotg_cc_irq(struct dwc2_hsotg *hsotg,u32 gintsts);
 static void platform_fusb_notify(struct fusb30x_chip *chip)
 {
 	bool plugged = false, flip = false, dfp = false, ufp = false,
@@ -232,8 +307,13 @@ static void platform_fusb_notify(struct fusb30x_chip *chip)
 	if (chip->notify.is_cc_connected)
 		chip->notify.orientation =
 			(chip->cc_polarity == TYPEC_POLARITY_CC1) ?
-			CC1 : CC2;
-
+			TYPEC_ORIENTATION_CC1 : TYPEC_ORIENTATION_CC2;
+//tanlq 220630 add for typec headset, lock system
+	printk("platform_fusb_notify cc_connected:%d pd_connected:%dorientation:%d\n",chip->notify.orientation,chip->notify.is_pd_connected,chip->notify.orientation);
+	if(chip->notify.is_cc_connected)
+		wake_lock(&chip->suspend_lock);
+	else
+		wake_unlock(&chip->suspend_lock);
 	/* avoid notify repeated */
 	if (memcmp(&chip->notify, &chip->notify_cmp,
 		   sizeof(struct notify_info))) {
@@ -244,23 +324,39 @@ static void platform_fusb_notify(struct fusb30x_chip *chip)
 
 		plugged = chip->notify.is_cc_connected ||
 			  chip->notify.is_pd_connected;
-		if (chip->notify.orientation != NONE)
-			flip = (chip->notify.orientation == CC1) ? false : true;
+		if (chip->notify.orientation != TYPEC_ORIENTATION_NONE)
+			flip = (chip->notify.orientation == TYPEC_ORIENTATION_CC1) ?
+			       false : true;
 		dp = chip->notify.is_enter_mode;
 
 		if (dp) {
 			dfp = true;
 			usb_ss = (chip->notify.pin_assignment_def &
-				 (PIN_MAP_B | PIN_MAP_D | PIN_MAP_F)) ?
-				 true : false;
+				  MODE_DP_PIN_MF_MASK) ? true : false;
 			hpd = GET_DP_STATUS_HPD(chip->notify.dp_status);
 		} else if (chip->notify.data_role) {
 			dfp = true;
 			usb_ss = true;
+			#if 0
+			chip->cur_headset_status = 1;
+			//switch_set_state(&chip->sdev, chip->cur_headset_status);
+
+			dwc2_handle_cc_intr(chip->dwc2,0x40000000);
+			dwc2_hsotg_cc_irq(chip->dwc2,0x04809020);
+			dwc2_handle_cc_intr(chip->dwc2,0);
+			dwc2_hsotg_cc_irq(chip->dwc2,0x0400a020);
+			dwc2_hsotg_cc_irq(chip->dwc2,0x04009020);
+			dwc2_handle_cc_intr(chip->dwc2,0x10000000);
+#endif
 		} else if (plugged) {
 			ufp = true;
 			usb_ss = true;
 		}
+		//else if((chip->notify.orientation == 0) && (chip->cur_headset_status == 1)){
+		//	chip->cur_headset_status = 0;
+		//	//switch_set_state(&chip->sdev, chip->cur_headset_status);
+
+		//}
 
 		property.intval = flip;
 		extcon_set_property(chip->extcon, EXTCON_USB,
@@ -283,6 +379,22 @@ static void platform_fusb_notify(struct fusb30x_chip *chip)
 		extcon_sync(chip->extcon, EXTCON_USB);
 		extcon_sync(chip->extcon, EXTCON_USB_HOST);
 		extcon_sync(chip->extcon, EXTCON_DISP_DP);
+
+		{
+			enum usb_dr_mode new_dr_mode = USB_DR_MODE_OTG;
+
+			if (ufp == true && dfp == false)
+				new_dr_mode = USB_DR_MODE_PERIPHERAL;
+			else if (ufp == false && dfp == true)
+				new_dr_mode = USB_DR_MODE_HOST;
+			otg_mode_switch(new_dr_mode);
+
+			printk("otg_mode_switch - %s, %d, ufp, %d, dfp: %d, new_dr_mode: %d\n",
+				__func__, __LINE__, ufp, dfp, new_dr_mode);
+		}
+		/* Set the dwc2 otg mode according to the values of ufp and dfp.*/
+		//rockchip_dwc2_otg_mode_switch(chip, ufp, dfp);
+
 		if (chip->notify.power_role == POWER_ROLE_SINK &&
 		    chip->notify.is_pd_connected &&
 		    chip->pd_output_vol > 0 && chip->pd_output_cur > 0) {
@@ -318,17 +430,17 @@ static void platform_set_vbus_lvl_enable(struct fusb30x_chip *chip, int vbus_5v,
 
 	gpio_vbus_value = gpiod_get_value(chip->gpio_vbus_5v);
 	if (chip->gpio_vbus_5v) {
-		gpiod_set_raw_value(chip->gpio_vbus_5v, vbus_5v);
+		gpiod_set_value(chip->gpio_vbus_5v, vbus_5v);
 		/* Only set state here, don't sync notifier to PMIC */
 		extcon_set_state(chip->extcon, EXTCON_USB_VBUS_EN, vbus_5v);
 	} else {
 		extcon_set_state(chip->extcon, EXTCON_USB_VBUS_EN, vbus_5v);
 		extcon_sync(chip->extcon, EXTCON_USB_VBUS_EN);
-		dev_info(chip->dev, "fusb302 send extcon to %s vbus 5v\n", vbus_5v ? "enable" : "disable");
+		// dev_info(chip->dev, "fusb302 send extcon to %s vbus 5v\n", vbus_5v ? "enable" : "disable");
 	}
 
 	if (chip->gpio_vbus_other)
-		gpiod_set_raw_value(chip->gpio_vbus_5v, vbus_other);
+		gpiod_set_value(chip->gpio_vbus_other, vbus_other);
 
 	if (chip->gpio_discharge && !vbus_5v && gpio_vbus_value) {
 		gpiod_set_value(chip->gpio_discharge, 1);
@@ -372,97 +484,107 @@ static void fusb302_flush_rx_fifo(struct fusb30x_chip *chip)
 	regmap_write(chip->regmap, FUSB_REG_CONTROL1, CONTROL1_RX_FLUSH);
 }
 
-static int tcpm_get_cc(struct fusb30x_chip *chip, int *CC1, int *CC2)
+static int tcpm_get_cc_pull_up(struct fusb30x_chip *chip,
+			       enum CC_ORIENTATION cc)
 {
-	u32 val;
-	int *CC_MEASURE;
-	u32 store;
+	int ret;
+	u32 val, store;
 
-	*CC1 = TYPEC_CC_VOLT_OPEN;
-	*CC2 = TYPEC_CC_VOLT_OPEN;
+	if (cc == TYPEC_ORIENTATION_NONE)
+		return 0;
 
-	if (chip->cc_state & CC_STATE_TOGSS_CC1)
-		CC_MEASURE = CC1;
+	ret = TYPEC_CC_VOLT_OPEN;
+	regmap_read(chip->regmap, FUSB_REG_SWITCHES0, &store);
+	val = store;
+	val &= ~(SWITCHES0_MEAS_CC1 | SWITCHES0_MEAS_CC2 |
+			SWITCHES0_PU_EN1 | SWITCHES0_PU_EN2);
+	if (cc == TYPEC_ORIENTATION_CC1)
+		val |= SWITCHES0_MEAS_CC1 | SWITCHES0_PU_EN1;
 	else
-		CC_MEASURE = CC2;
+		val |= SWITCHES0_MEAS_CC2 | SWITCHES0_PU_EN2;
+	regmap_write(chip->regmap, FUSB_REG_SWITCHES0, val);
 
-	if (chip->cc_state & CC_STATE_TOGSS_IS_UFP) {
-		regmap_read(chip->regmap, FUSB_REG_SWITCHES0, &store);
-		/* measure cc1 first */
-		regmap_update_bits(chip->regmap, FUSB_REG_SWITCHES0,
-				   SWITCHES0_MEAS_CC1 | SWITCHES0_MEAS_CC2 |
-				   SWITCHES0_PU_EN1 | SWITCHES0_PU_EN2 |
-				   SWITCHES0_PDWN1 | SWITCHES0_PDWN2,
-				   SWITCHES0_PDWN1 | SWITCHES0_PDWN2 |
-				   SWITCHES0_MEAS_CC1);
-		usleep_range(250, 300);
+	regmap_write(chip->regmap, FUSB_REG_MEASURE, chip->cc_meas_high);
+	usleep_range(250, 300);
 
-		regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
-		val &= STATUS0_BC_LVL;
-		*CC1 = val ? TYPEC_CC_VOLT_RP : TYPEC_CC_VOLT_OPEN;
+	regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
+	if (val & STATUS0_COMP) {
+		int retry = 3;
+		int comp_times = 0;
 
-		regmap_update_bits(chip->regmap, FUSB_REG_SWITCHES0,
-				   SWITCHES0_MEAS_CC1 | SWITCHES0_MEAS_CC2 |
-				   SWITCHES0_PU_EN1 | SWITCHES0_PU_EN2 |
-				   SWITCHES0_PDWN1 | SWITCHES0_PDWN2,
-				   SWITCHES0_PDWN1 | SWITCHES0_PDWN2 |
-				   SWITCHES0_MEAS_CC2);
-		usleep_range(250, 300);
-
-		regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
-		val &= STATUS0_BC_LVL;
-		*CC2 = val ? TYPEC_CC_VOLT_RP : TYPEC_CC_VOLT_OPEN;
-
-		regmap_update_bits(chip->regmap, FUSB_REG_SWITCHES0,
-				   SWITCHES0_MEAS_CC1 | SWITCHES0_MEAS_CC2,
-				   store);
-	} else {
-		regmap_read(chip->regmap, FUSB_REG_SWITCHES0, &store);
-		val = store;
-		val &= ~(SWITCHES0_MEAS_CC1 | SWITCHES0_MEAS_CC2 |
-				SWITCHES0_PU_EN1 | SWITCHES0_PU_EN2);
-		if (chip->cc_state & CC_STATE_TOGSS_CC1) {
-			val |= SWITCHES0_MEAS_CC1 | SWITCHES0_PU_EN1;
-		} else {
-			val |= SWITCHES0_MEAS_CC2 | SWITCHES0_PU_EN2;
-		}
-		regmap_write(chip->regmap, FUSB_REG_SWITCHES0, val);
-
-		regmap_write(chip->regmap, FUSB_REG_MEASURE, chip->cc_meas_high);
-		usleep_range(250, 300);
-
-		regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
-		if (val & STATUS0_COMP) {
-			int retry = 3;
-			int comp_times = 0;
-
-			while (retry--) {
-				regmap_write(chip->regmap, FUSB_REG_MEASURE, chip->cc_meas_high);
-				usleep_range(250, 300);
-				regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
-				if (val & STATUS0_COMP) {
-					comp_times++;
-					if (comp_times == 3) {
-						*CC_MEASURE = TYPEC_CC_VOLT_OPEN;
-						regmap_write(chip->regmap, FUSB_REG_SWITCHES0, store);
-					}
+		while (retry--) {
+			regmap_write(chip->regmap, FUSB_REG_MEASURE,
+				     chip->cc_meas_high);
+			usleep_range(250, 300);
+			regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
+			if (val & STATUS0_COMP) {
+				comp_times++;
+				if (comp_times == 3) {
+					ret = TYPEC_CC_VOLT_OPEN;
+					regmap_write(chip->regmap,
+						     FUSB_REG_SWITCHES0,
+						     store);
 				}
 			}
-		} else {
-			regmap_write(chip->regmap, FUSB_REG_MEASURE, chip->cc_meas_low);
-			regmap_read(chip->regmap, FUSB_REG_MEASURE, &val);
-			usleep_range(250, 300);
-
-			regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
-
-			if (val & STATUS0_COMP)
-				*CC_MEASURE = TYPEC_CC_VOLT_RD;
-			else
-				*CC_MEASURE = TYPEC_CC_VOLT_RA;
 		}
-		regmap_write(chip->regmap, FUSB_REG_SWITCHES0, store);
-		regmap_write(chip->regmap, FUSB_REG_MEASURE,
-			     chip->cc_meas_high);
+	} else {
+		regmap_write(chip->regmap, FUSB_REG_MEASURE, chip->cc_meas_low);
+		regmap_read(chip->regmap, FUSB_REG_MEASURE, &val);
+		usleep_range(250, 300);
+
+		regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
+
+		if (val & STATUS0_COMP)
+			ret = TYPEC_CC_VOLT_RD;
+		else
+			ret = TYPEC_CC_VOLT_RA;
+	}
+	regmap_write(chip->regmap, FUSB_REG_SWITCHES0, store);
+	regmap_write(chip->regmap, FUSB_REG_MEASURE,
+		     chip->cc_meas_high);
+	return ret;
+}
+
+static int tcpm_get_cc_pull_down(struct fusb30x_chip *chip,
+				 enum CC_ORIENTATION cc)
+{
+	u32 val, store;
+
+	if (cc == TYPEC_ORIENTATION_NONE)
+		return 0;
+
+	regmap_read(chip->regmap, FUSB_REG_SWITCHES0, &store);
+	val = SWITCHES0_PDWN1 | SWITCHES0_PDWN2;
+	val |= (cc == TYPEC_ORIENTATION_CC1) ?
+	       SWITCHES0_MEAS_CC1 : SWITCHES0_MEAS_CC2;
+	regmap_update_bits(chip->regmap, FUSB_REG_SWITCHES0,
+			   SWITCHES0_MEAS_CC1 | SWITCHES0_MEAS_CC2 |
+			   SWITCHES0_PU_EN1 | SWITCHES0_PU_EN2 |
+			   SWITCHES0_PDWN1 | SWITCHES0_PDWN2,
+			   val);
+	usleep_range(250, 300);
+
+	regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
+	val &= STATUS0_BC_LVL;
+	return val ? TYPEC_CC_VOLT_RP : TYPEC_CC_VOLT_OPEN;
+}
+
+static int tcpm_get_cc(struct fusb30x_chip *chip, int *cc1, int *cc2)
+{
+	if (CC_STATE_ROLE(chip) == CC_STATE_TOGSS_IS_UFP) {
+		*cc1 = tcpm_get_cc_pull_down(chip, TYPEC_ORIENTATION_CC1);
+		*cc2 = tcpm_get_cc_pull_down(chip, TYPEC_ORIENTATION_CC2);
+	} else if (CC_STATE_ROLE(chip) == CC_STATE_TOGSS_IS_DFP) {
+		if (chip->cc_state & CC_STATE_TOGSS_CC1) {
+			*cc1 = tcpm_get_cc_pull_up(chip, TYPEC_ORIENTATION_CC1);
+			*cc2 = TYPEC_CC_VOLT_OPEN;
+		} else {
+			*cc1 = TYPEC_CC_VOLT_OPEN;
+			*cc2 = tcpm_get_cc_pull_up(chip, TYPEC_ORIENTATION_CC2);
+		}
+	} else {
+		*cc1 = tcpm_get_cc_pull_up(chip, TYPEC_ORIENTATION_CC1);
+		*cc2 = tcpm_get_cc_pull_up(chip, TYPEC_ORIENTATION_CC2);
 	}
 
 	return 0;
@@ -525,6 +647,8 @@ static int tcpm_set_cc(struct fusb30x_chip *chip, enum role_mode mode)
 		break;
 	}
 
+	regmap_update_bits(chip->regmap, FUSB_REG_CONTROL4,
+			   CONTROL4_TOG_USRC_EXIT, CONTROL4_TOG_USRC_EXIT);
 	regmap_update_bits(chip->regmap, FUSB_REG_CONTROL2, CONTROL2_TOGGLE,
 			   CONTROL2_TOGGLE);
 
@@ -580,7 +704,7 @@ static int tcpm_set_polarity(struct fusb30x_chip *chip,
 			val |= SWITCHES0_VCONN_CC2;
 	}
 
-	if (chip->cc_state & CC_STATE_TOGSS_IS_UFP) {
+	if (CC_STATE_ROLE(chip) == CC_STATE_TOGSS_IS_UFP) {
 		if (polarity == TYPEC_POLARITY_CC1)
 			val |= SWITCHES0_MEAS_CC1;
 		else
@@ -743,6 +867,20 @@ static void pd_execute_hard_reset(struct fusb30x_chip *chip)
 		set_state(chip, policy_snk_transition_default);
 }
 
+static int set_cc_state(int reg)
+{
+	reg = reg >> 3;
+
+	if (reg & CC_STATE_TOGSS_IS_UFP) {
+		if ((reg & 0x03) == 0x03)
+			return CC_STATE_TOGSS_IS_ACC | 0x03;
+		else
+			return CC_STATE_TOGSS_IS_UFP | (reg & 0x03);
+	} else {
+		return CC_STATE_TOGSS_IS_DFP | (reg & 0x03);
+	}
+}
+
 static void tcpc_alert(struct fusb30x_chip *chip, u32 *evt)
 {
 	int interrupt, interrupta, interruptb;
@@ -754,7 +892,7 @@ static void tcpc_alert(struct fusb30x_chip *chip, u32 *evt)
 	regmap_read(chip->regmap, FUSB_REG_INTERRUPTB, &interruptb);
 
 	if ((interrupt & INTERRUPT_COMP_CHNG) &&
-	    (!(chip->cc_state & CC_STATE_TOGSS_IS_UFP))) {
+	    (CC_STATE_ROLE(chip) != CC_STATE_TOGSS_IS_UFP)) {
 		regmap_read(chip->regmap, FUSB_REG_STATUS0, &val);
 		if (val & STATUS0_COMP)
 			*evt |= EVENT_CC;
@@ -768,7 +906,7 @@ static void tcpc_alert(struct fusb30x_chip *chip, u32 *evt)
 	if (interrupta & INTERRUPTA_TOGDONE) {
 		*evt |= EVENT_CC;
 		regmap_read(chip->regmap, FUSB_REG_STATUS1A, &val);
-		chip->cc_state = ((u8)val >> 3) & 0x07;
+		chip->cc_state = set_cc_state(val);
 
 		regmap_update_bits(chip->regmap, FUSB_REG_CONTROL2,
 				   CONTROL2_TOGGLE,
@@ -833,7 +971,19 @@ static void mux_alert(struct fusb30x_chip *chip, u32 *evt)
 
 static void set_state_unattached(struct fusb30x_chip *chip)
 {
-	dev_info(chip->dev, "connection has disconnected\n");
+	// dev_info(chip->dev, "connection has disconnected\n");
+
+	if (chip->notify.is_cc_connected &&
+	    CC_STATE_ROLE(chip) == CC_STATE_TOGSS_IS_ACC) {
+		/* try to switch audio digital phone */
+		if (chip->gpio_switch)
+			gpiod_set_value(chip->gpio_switch, 1);
+		input_report_switch(chip->input, SW_HEADPHONE_INSERT, 0);
+		input_sync(chip->input);
+
+		switch_set_state(&chip->sdev, 0);
+	}
+
 	tcpm_init(chip);
 	tcpm_set_rx_enable(chip, 0);
 	set_state(chip, unattached);
@@ -918,10 +1068,57 @@ static void set_mesg(struct fusb30x_chip *chip, int cmd, int is_DMT)
 	}
 }
 
+/*
+ * This algorithm defaults to choosing higher pin config over lower ones in
+ * order to prefer multi-function if desired.
+ *
+ *  NAME | SIGNALING | OUTPUT TYPE | MULTI-FUNCTION | PIN CONFIG
+ * -------------------------------------------------------------
+ *  A    |  USB G2   |  ?          | no             | 00_0001
+ *  B    |  USB G2   |  ?          | yes            | 00_0010
+ *  C    |  DP       |  CONVERTED  | no             | 00_0100
+ *  D    |  PD       |  CONVERTED  | yes            | 00_1000
+ *  E    |  DP       |  DP         | no             | 01_0000
+ *  F    |  PD       |  DP         | yes            | 10_0000
+ *
+ * if UFP has NOT asserted multi-function preferred code masks away B/D/F
+ * leaving only A/C/E.  For single-output dongles that should leave only one
+ * possible pin config depending on whether its a converter DP->(VGA|HDMI) or DP
+ * output.  If UFP is a USB-C receptacle it may assert C/D/E/F.  The DFP USB-C
+ * receptacle must always choose C/D in those cases.
+ */
+static int pd_dfp_dp_get_pin_assignment(struct fusb30x_chip *chip,
+					uint32_t caps, uint32_t status)
+{
+	uint32_t pin_caps;
+
+	/* revisit with DFP that can be a sink */
+	pin_caps = PD_DP_PIN_CAPS(caps);
+
+	/* if don't want multi-function then ignore those pin configs */
+	if (!PD_VDO_DPSTS_MF_PREF(status))
+		pin_caps &= ~MODE_DP_PIN_MF_MASK;
+
+	/* revisit if DFP drives USB Gen 2 signals */
+	if (PD_DP_SIGNAL_GEN2(caps))
+		pin_caps &= ~MODE_DP_PIN_DP_MASK;
+	else
+		pin_caps &= ~MODE_DP_PIN_BR2_MASK;
+
+	/* if C/D present they have precedence over E/F for USB-C->USB-C */
+	if (pin_caps & (MODE_DP_PIN_C | MODE_DP_PIN_D))
+		pin_caps &= ~(MODE_DP_PIN_E | MODE_DP_PIN_F);
+
+	/* returns undefined for zero */
+	if (!pin_caps)
+		return 0;
+
+	/* choosing higher pin config over lower ones */
+	return 1 << (31 - __builtin_clz(pin_caps));
+}
+
 static void set_vdm_mesg(struct fusb30x_chip *chip, int cmd, int type, int mode)
 {
-	u32 tmp, i;
-
 	chip->send_head = (chip->msg_id & 0x7) << 9;
 	chip->send_head |= (chip->notify.power_role & 0x1) << 8;
 
@@ -965,20 +1162,14 @@ static void set_vdm_mesg(struct fusb30x_chip *chip, int cmd, int type, int mode)
 		chip->send_head |= (2 << 12);
 		chip->send_load[0] |= (1 << 8) | (0xff01 << 16);
 
-		tmp = chip->notify.pin_assignment_support;
-		if (!VDM_DP_MULTIFUCTION(chip->notify.dp_status))
-			tmp &= ~PIN_MAP_MF_MASK;
-
-		for (i = 0; i < 6; i++) {
-			if (!(tmp & 0x20))
-				tmp = tmp << 1;
-			else
-				break;
-		}
-		chip->notify.pin_assignment_def = 0x20 >> i;
+		chip->notify.pin_assignment_def =
+			pd_dfp_dp_get_pin_assignment(chip, chip->notify.dp_caps,
+						     chip->notify.dp_status);
 
 		chip->send_load[1] = (chip->notify.pin_assignment_def << 8) |
 				    (1 << 2) | 2;
+		dev_dbg(chip->dev, "DisplayPort Configurations: 0x%08x\n",
+			chip->send_load[1]);
 		break;
 	default:
 		break;
@@ -1104,17 +1295,20 @@ static void process_vdm_msg(struct fusb30x_chip *chip)
 				 * enter first mode default
 				 */
 				tmp = chip->rec_load[1];
+
 				if ((!((tmp >> 8) & 0x3f)) &&
 				    (!((tmp >> 16) & 0x3f))) {
 					chip->val_tmp |= 1;
 					break;
 				}
+				chip->notify.dp_caps = chip->rec_load[1];
 				chip->notify.pin_assignment_def = 0;
 				chip->notify.pin_assignment_support =
-					VDM_DP_GET_RECEPTACLE(tmp) ?
-					((chip->rec_load[1] >> 16) & 0x3f) :
-					((chip->rec_load[1] >> 8) & 0x3f);
+							PD_DP_PIN_CAPS(tmp);
 				chip->val_tmp |= 1;
+				dev_dbg(chip->dev,
+					"DisplayPort Capabilities: 0x%08x\n",
+					chip->rec_load[1]);
 			}
 			break;
 		case VDM_ENTER_MODE:
@@ -1122,7 +1316,7 @@ static void process_vdm_msg(struct fusb30x_chip *chip)
 			break;
 		case VDM_DP_STATUS_UPDATE:
 			chip->notify.dp_status = GET_DP_STATUS(chip->rec_load[1]);
-			dev_dbg(chip->dev, "dp_status 0x%x\n",
+			dev_dbg(chip->dev, "DisplayPort Status: 0x%08x\n",
 				chip->rec_load[1]);
 			chip->val_tmp = 1;
 			break;
@@ -1460,10 +1654,12 @@ static void fusb_state_unattached(struct fusb30x_chip *chip, u32 evt)
 	chip->is_pd_support = false;
 
 	if ((evt & EVENT_CC) && chip->cc_state) {
-		if (chip->cc_state & CC_STATE_TOGSS_IS_UFP)
+		if (CC_STATE_ROLE(chip) == CC_STATE_TOGSS_IS_UFP)
 			set_state(chip, attach_wait_sink);
-		else
+		else if (CC_STATE_ROLE(chip) == CC_STATE_TOGSS_IS_DFP)
 			set_state(chip, attach_wait_source);
+		else
+			set_state(chip, attach_wait_audio_acc);
 
 		chip->vbus_begin = tcpm_check_vbus(chip);
 
@@ -1574,8 +1770,8 @@ static void fusb_state_attach_wait_source(struct fusb30x_chip *chip, u32 evt)
 					set_state(chip, attached_source);
 			} else {
 				set_state_unattached(chip);
+				return;
 			}
-			return;
 		}
 
 		chip->timer_mux = 2;
@@ -1638,7 +1834,7 @@ static void fusb_state_try_attach(struct fusb30x_chip *chip, u32 evt,
 {
 	if ((evt & EVENT_CC) && chip->cc_state) {
 		chip->try_role_complete = true;
-		if (chip->cc_state & CC_STATE_TOGSS_IS_UFP)
+		if (CC_STATE_ROLE(chip) == CC_STATE_TOGSS_IS_UFP)
 			set_state(chip, (mode == ROLE_MODE_UFP) ?
 					attach_wait_sink : error_recovery);
 		else
@@ -1663,6 +1859,57 @@ static void fusb_state_try_attach(struct fusb30x_chip *chip, u32 evt,
 			set_state(chip, error_recovery);
 		}
 	}
+}
+
+static void fusb_state_attach_wait_audio_acc(struct fusb30x_chip *chip, u32 evt)
+{
+	int cc1, cc2;
+
+	if (evt & EVENT_TIMER_MUX) {
+		tcpm_get_cc(chip, &cc1, &cc2);
+
+		if (chip->cc1 == cc1 && chip->cc2 == cc2) {
+			chip->debounce_cnt++;
+		} else {
+			chip->cc1 = cc1;
+			chip->cc2 = cc2;
+			chip->debounce_cnt = 0;
+		}
+
+		if (chip->debounce_cnt > N_DEBOUNCE_CNT) {
+			if (chip->cc1 == TYPEC_CC_VOLT_RA &&
+			    chip->cc2 == TYPEC_CC_VOLT_RA) {
+				set_state(chip, attached_audio_acc);
+			} else {
+				dev_warn(chip->dev, "unknown acc, cc %d %d\n",
+					 chip->cc1, chip->cc2);
+				set_state_unattached(chip);
+				return;
+			}
+		}
+
+		chip->timer_mux = 2;
+		fusb_timer_start(&chip->timer_mux_machine,
+				 chip->timer_mux);
+	}
+}
+
+static void fusb_state_attached_audio_acc(struct fusb30x_chip *chip, u32 evt)
+{
+	tcpm_set_polarity(chip, (chip->cc_state & CC_STATE_TOGSS_CC1) ?
+				TYPEC_POLARITY_CC1 : TYPEC_POLARITY_CC2);
+	chip->notify.is_cc_connected = true;
+	chip->hardrst_count = 0;
+	set_state(chip, disabled);
+	regmap_update_bits(chip->regmap, FUSB_REG_MASK, MASK_M_COMP_CHNG, 0);
+	dev_info(chip->dev, "CC connected as Audio Accessory\n");
+	/* try to switch audio analog phone */
+	if (chip->gpio_switch)
+		gpiod_set_value(chip->gpio_switch, 0);
+	input_report_switch(chip->input, SW_HEADPHONE_INSERT, 1);
+	input_sync(chip->input);
+
+	switch_set_state(&chip->sdev, (1<<1)); //20210522,hsl add.NO-MIC.
 }
 
 static void fusb_soft_reset_parameter(struct fusb30x_chip *chip)
@@ -2118,6 +2365,7 @@ static void fusb_state_src_prs_source_off(struct fusb30x_chip *chip, u32 evt)
 				chip->timer_state = T_DISABLED;
 				/* snk startup */
 				chip->notify.is_pd_connected = false;
+				chip->cc_state &= ~CC_STATE_TOGSS_ROLE;
 				chip->cc_state |= CC_STATE_TOGSS_IS_UFP;
 				tcpm_set_polarity(chip, chip->cc_polarity);
 				tcpm_set_rx_enable(chip, 1);
@@ -2684,7 +2932,8 @@ static void fusb_state_snk_prs_source_on(struct fusb30x_chip *chip, u32 evt)
 		break;
 	case 3:
 		if (evt & EVENT_TIMER_STATE) {
-			chip->cc_state &= ~CC_STATE_TOGSS_IS_UFP;
+			chip->cc_state &= ~CC_STATE_TOGSS_ROLE;
+			chip->cc_state |= CC_STATE_TOGSS_IS_DFP;
 			regmap_update_bits(chip->regmap, FUSB_REG_MASK,
 					   MASK_M_COMP_CHNG, 0);
 			set_state(chip, policy_src_send_caps);
@@ -2762,7 +3011,12 @@ static void fusb_try_detach(struct fusb30x_chip *chip)
 {
 	int cc1, cc2;
 
-	if ((chip->cc_state & CC_STATE_TOGSS_IS_UFP) &&
+	if (CC_STATE_ROLE(chip) == CC_STATE_TOGSS_IS_ACC) {
+		tcpm_get_cc(chip, &cc1, &cc2);
+		if (cc1 != TYPEC_CC_VOLT_RA ||
+		    cc2 != TYPEC_CC_VOLT_RA)
+			set_state_unattached(chip);
+	} else if ((CC_STATE_ROLE(chip) == CC_STATE_TOGSS_IS_UFP) &&
 	    (chip->conn_state !=
 	     policy_snk_transition_default) &&
 	    (chip->conn_state !=
@@ -2801,7 +3055,7 @@ static void state_machine_typec(struct fusb30x_chip *chip)
 	mux_alert(chip, &evt);
 	if (!evt)
 		goto BACK;
-
+		
 	if (chip->notify.is_cc_connected)
 		if (evt & (EVENT_CC | EVENT_DELAY_CC))
 			fusb_try_detach(chip);
@@ -2816,6 +3070,8 @@ static void state_machine_typec(struct fusb30x_chip *chip)
 		}
 	}
 
+    // printk("state_machine_typec evt:0x%x ,conn state=%d\n", evt, chip->conn_state);
+    
 	if (evt & EVENT_TX) {
 		if (chip->tx_state == tx_success)
 			chip->msg_id++;
@@ -2847,6 +3103,12 @@ static void state_machine_typec(struct fusb30x_chip *chip)
 		break;
 	case attach_try_snk:
 		fusb_state_try_attach(chip, evt, ROLE_MODE_UFP);
+		break;
+	case attach_wait_audio_acc:
+		fusb_state_attach_wait_audio_acc(chip, evt);
+		break;
+	case attached_audio_acc:
+		fusb_state_attached_audio_acc(chip, evt);
 		break;
 
 	/* POWER DELIVERY */
@@ -3026,6 +3288,11 @@ static irqreturn_t cc_interrupt_handler(int irq, void *dev_id)
 {
 	struct fusb30x_chip *chip = dev_id;
 
+	// 20210703: 用来解决 USB 无法识别的问题。看看USB插入的时候，CC 是否产生中断。
+	printk("%s:enter,irq=%d!\n", __func__, irq);
+    //tanlq 220630 add for typec headset, lock system 15s。cc connect needs 6s
+	wake_lock_timeout(&chip->detect_lock, 15*HZ);
+//cancel_delayed_work(&chip->delayed_work);
 	queue_work(chip->fusb30x_wq, &chip->work);
 	fusb_irq_disable(chip);
 	return IRQ_HANDLED;
@@ -3044,7 +3311,7 @@ static int fusb_initialize_gpio(struct fusb30x_chip *chip)
 		dev_warn(chip->dev,
 			 "Could not get named GPIO for VBus5V!\n");
 	else
-		gpiod_set_raw_value(chip->gpio_vbus_5v, 0);
+		gpiod_set_value(chip->gpio_vbus_5v, 0);
 
 	chip->gpio_vbus_other = devm_gpiod_get_optional(chip->dev,
 							"vbus-other",
@@ -3053,7 +3320,7 @@ static int fusb_initialize_gpio(struct fusb30x_chip *chip)
 		dev_warn(chip->dev,
 			 "Could not get named GPIO for VBusOther!\n");
 	else
-		gpiod_set_raw_value(chip->gpio_vbus_other, 0);
+		gpiod_set_value(chip->gpio_vbus_other, 0);
 
 	chip->gpio_discharge = devm_gpiod_get_optional(chip->dev, "discharge",
 						       GPIOD_OUT_LOW);
@@ -3063,12 +3330,27 @@ static int fusb_initialize_gpio(struct fusb30x_chip *chip)
 		chip->gpio_discharge = NULL;
 	}
 
+	chip->gpio_switch = devm_gpiod_get_optional(chip->dev, "switch",
+						    GPIOD_OUT_HIGH);
+	if (IS_ERR(chip->gpio_switch)) {
+		dev_warn(chip->dev,
+			 "Could not get named GPIO for switch!\n");
+		chip->gpio_switch = NULL;
+	}
+
+    chip->supply = devm_regulator_get(chip->dev, "power");
+	if (IS_ERR(chip->supply)) {
+		dev_warn(chip->dev, "%s: No supply found! continue...\n", __func__);
+		chip->supply = NULL;
+	}
+	
 	return 0;
 }
 
 static enum hrtimer_restart fusb_timer_handler(struct hrtimer *timer)
 {
 	int i;
+	// printk(" fusb_timer_handler\n");
 
 	for (i = 0; i < fusb30x_port_used; i++) {
 		if (timer == &fusb30x_port_info[i]->timer_state_machine) {
@@ -3105,13 +3387,123 @@ static void fusb_initialize_timer(struct fusb30x_chip *chip)
 	chip->timer_mux = T_DISABLED;
 }
 
+static int func_is_ready(struct fusb30x_chip *chip)
+{
+	struct extcon_dev *edev;
+	struct device_node *node = chip->dev->of_node;
+
+	if (!chip->ready) {
+		if (of_property_read_bool(node, "extcon")) {
+			edev = extcon_get_edev_by_phandle(chip->dev, 0);
+			if (!IS_ERR(edev)) {
+				chip->ready = true;
+			}
+		} else {
+			chip->ready = true;
+		}
+	}
+
+	return chip->ready;
+}
+
+static void fusb_poweron_init(struct fusb30x_chip *chip)
+{
+    if(chip->needs_init) {
+        printk("%s: enter!\n", __func__);
+        tcpm_init(chip);
+    	tcpm_set_rx_enable(chip, 0);
+    	chip->conn_state = unattached;
+    	tcpm_set_cc(chip, chip->role);
+    	chip->needs_init =false;
+	}
+}
+
+static void fusb302_trigger_func(struct fusb30x_chip *chip)
+{
+    if(chip->suspended) {
+        printk("%s: but suspended,something error??\n", __func__);
+        return;
+    }
+    
+	if (!func_is_ready(chip)) {
+		schedule_delayed_work(&chip->delayed_work, msecs_to_jiffies(200));
+		return;
+	}
+
+	//if (!chip->suspended)
+		state_machine_typec(chip);
+}
+
+
+
 static void fusb302_work_func(struct work_struct *work)
 {
-	struct fusb30x_chip *chip;
+	struct fusb30x_chip *chip = container_of(work,
+					struct fusb30x_chip, work);
 
-	chip = container_of(work, struct fusb30x_chip, work);
-	state_machine_typec(chip);
+	fusb302_trigger_func(chip);
 }
+
+static void fusb302_delayed_work_func(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct fusb30x_chip *chip = container_of(dwork,
+				struct fusb30x_chip, delayed_work);
+printk("fusb302_delayed_work_func \n");
+    fusb_poweron_init(chip); // 20210524,hsl add.
+    if(chip->suspended) {
+        fusb_irq_enable(chip);
+	    chip->suspended = false;
+	}
+
+	fusb302_trigger_func(chip);
+}
+#ifdef CONFIG_LTE
+// 20210526: CC 芯片和串口一起供电，关闭了 vccio_sd，测试发现休眠唤不醒，有可能串口被堵塞
+// 了，所以此处增加编译开关用于测试.实际上此处保留代码，DTS 里面设置 regulator-always-on; 也是可以的。
+static int fusb30x_set_enabled(struct fusb30x_chip *chip, bool enabled)
+{
+    int ret = 0;
+    if (!IS_ERR_OR_NULL(chip->supply)) {
+        dev_err(chip->dev, "%s: enable=%d,regulator_is_enabled=%d\n", __func__, 
+            enabled, regulator_is_enabled(chip->supply));
+        if (enabled) {
+            if(!regulator_is_enabled(chip->supply)) {
+                ret = regulator_enable(chip->supply);
+                // msleep(10);
+                chip->needs_init = true;
+            }
+        } else {
+            ret = regulator_disable(chip->supply);
+        }
+        if (ret < 0) {
+            dev_err(chip->dev, "%s:failed to enable supply: %d\n", __func__, ret);
+        }
+    }
+    return 0;
+}
+#endif
+static int fusb30x_init_power_on(struct fusb30x_chip *chip)
+{
+    int ret = 0;
+    if (!IS_ERR_OR_NULL(chip->supply)) {
+        dev_err(chip->dev, "%s: regulator_is_enabled=%d\n", __func__, regulator_is_enabled(chip->supply));
+        ret = regulator_enable(chip->supply);
+        msleep(10);
+        chip->needs_init = true;
+        if (ret < 0) {
+            dev_err(chip->dev, "%s:failed to enable supply: %d\n", __func__, ret);
+        }
+    }
+    return 0;
+}
+
+
+static ssize_t fusb30x_h2w_print_name(struct switch_dev *sdev, char *buf)
+{
+	return sprintf(buf, "usbHeadset\n");
+}
+
 
 static int fusb30x_probe(struct i2c_client *client,
 			 const struct i2c_device_id *id)
@@ -3120,7 +3512,8 @@ static int fusb30x_probe(struct i2c_client *client,
 	struct PD_CAP_INFO *pd_cap_info;
 	int ret;
 	char *string[2];
-
+	//struct device_node *node;
+	printk("fusb30x_probe \n");
 	chip = devm_kzalloc(&client->dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip)
 		return -ENOMEM;
@@ -3142,10 +3535,25 @@ static int fusb30x_probe(struct i2c_client *client,
 	if (ret)
 		return ret;
 
+    fusb30x_init_power_on(chip); // 20210522,hsl add.
+
+    chip->sdev.name = "h2w";
+	chip->sdev.print_name = fusb30x_h2w_print_name;
+	ret = switch_dev_register(&chip->sdev);
+	if (ret < 0) {
+	    printk("%s: switch_dev_register failed\n", __FUNCTION__);
+		return ret;
+    }
+    switch_set_state(&chip->sdev, 0);
+    
 	fusb_initialize_timer(chip);
 
 	chip->fusb30x_wq = create_workqueue("fusb302_wq");
 	INIT_WORK(&chip->work, fusb302_work_func);
+	INIT_DELAYED_WORK(&chip->delayed_work, fusb302_delayed_work_func);
+    //tanlq 220630 add for typec headset, lock system
+    wake_lock_init(&chip->suspend_lock, WAKE_LOCK_SUSPEND, "fusb302");
+	wake_lock_init(&chip->detect_lock, WAKE_LOCK_SUSPEND, "fusb302_irq");
 
 	chip->role = ROLE_MODE_NONE;
 	chip->try_role = ROLE_MODE_NONE;
@@ -3176,13 +3584,30 @@ static int fusb30x_probe(struct i2c_client *client,
 
 	if (chip->try_role == ROLE_MODE_NONE)
 		string[1] = "ROLE_MODE_NONE";
+#if 0
+	node = of_parse_phandle(chip->dev->of_node, "extusb", 0);
+	if (!node) {
+		dev_err(chip->dev, "not find usb\n");
+		return -ENODEV;
+	}
 
+	chip->extusb = of_find_device_by_node(node);
+	of_node_put(node);
+	if (!chip->extusb) {
+		dev_err(chip->dev, "*****%s: Can't find cc-usb at of-tree!!****\n", __func__ );
+		return -EPROBE_DEFER;
+	}
+	chip->dwc2 = platform_get_drvdata(chip->extusb);
+#endif
 	chip->vconn_supported = true;
+#if 0	
 	tcpm_init(chip);
 	tcpm_set_rx_enable(chip, 0);
 	chip->conn_state = unattached;
 	tcpm_set_cc(chip, chip->role);
-
+#else
+    fusb_poweron_init(chip);
+#endif 
 	chip->n_caps_used = 1;
 	chip->source_power_supply[0] = 0x64;
 	chip->source_max_current[0] = 0x96;
@@ -3276,6 +3701,7 @@ static int fusb30x_probe(struct i2c_client *client,
 
 	spin_lock_init(&chip->irq_lock);
 	chip->enable_irq = 1;
+	chip->ready = false;
 
 	chip->gpio_int_irq = gpiod_to_irq(chip->gpio_int);
 	if (chip->gpio_int_irq < 0) {
@@ -3297,11 +3723,36 @@ static int fusb30x_probe(struct i2c_client *client,
 		dev_err(&client->dev, "irq request failed\n");
 		goto IRQ_ERR;
 	}
+	//if (pdata->headset_wakeup)
+	enable_irq_wake(chip->gpio_int_irq);
+	//chip->cur_headset_status = 0;
+	//chip->sdev.name = "h2w";
+//	chip->sdev.print_name = hsdet_h2w_print_name;
+	//ret = switch_dev_register(&chip->sdev);
+	//if (ret < 0)
+	//	return ret;
 
 	dev_info(chip->dev,
 		 "port %d probe success with role %s, try_role %s\n",
 		 chip->port_num, string[0], string[1]);
 
+	chip->input = devm_input_allocate_device(&client->dev);
+	if (!chip->input) {
+		dev_err(chip->dev, "Can't allocate input dev\n");
+		ret = -ENOMEM;
+		goto IRQ_ERR;
+	}
+
+	chip->input->name = "Typec_Headphone";
+	chip->input->phys = "fusb302/typec";
+
+	input_set_capability(chip->input, EV_SW, SW_HEADPHONE_INSERT);
+
+	ret = input_register_device(chip->input);
+	if (ret) {
+		dev_err(chip->dev, "Can't register input device: %d\n", ret);
+		goto IRQ_ERR;
+	}
 	return 0;
 
 IRQ_ERR:
@@ -3312,6 +3763,7 @@ IRQ_ERR:
 static int fusb30x_remove(struct i2c_client *client)
 {
 	struct fusb30x_chip *chip = i2c_get_clientdata(client);
+	printk("fusb30x_remove\n");
 
 	destroy_workqueue(chip->fusb30x_wq);
 	return 0;
@@ -3321,6 +3773,7 @@ static void fusb30x_shutdown(struct i2c_client *client)
 {
 	struct fusb30x_chip *chip = i2c_get_clientdata(client);
 
+	printk("fusb30x_shutdown\n");
 	if (chip->gpio_vbus_5v)
 		gpiod_set_value(chip->gpio_vbus_5v, 0);
 	if (chip->gpio_discharge) {
@@ -3329,6 +3782,57 @@ static void fusb30x_shutdown(struct i2c_client *client)
 		gpiod_set_value(chip->gpio_discharge, 0);
 	}
 }
+
+static int fusb30x_pm_suspend(struct device *dev)
+{
+	struct fusb30x_chip *chip = dev_get_drvdata(dev);
+printk("fusb30x_pm_suspend \n");
+#ifdef CONFIG_LTE
+    if(fb_power_off()) {
+    	fusb_irq_disable(chip);
+    	chip->suspended = true;
+    	//cancel_work_sync(&chip->work);
+    	cancel_delayed_work(&chip->delayed_work);
+
+        fusb30x_set_enabled(chip, false);
+    }
+#else
+
+    	fusb_irq_disable(chip);
+    	chip->suspended = true;
+    	cancel_work_sync(&chip->work);
+    	cancel_delayed_work(&chip->delayed_work);
+#endif
+
+	return 0;
+}
+
+static int fusb30x_pm_resume(struct device *dev)
+{
+	struct fusb30x_chip *chip = dev_get_drvdata(dev);
+	printk("fusb30x_pm_resume \n");
+    #ifdef CONFIG_LTE
+    if(fb_power_off()) {
+        fusb30x_set_enabled(chip, true);
+	//fusb_irq_enable(chip);
+	//chip->suspended = false;
+	//queue_work(chip->fusb30x_wq, &chip->work);
+	}
+	queue_delayed_work(chip->fusb30x_wq, &chip->delayed_work, msecs_to_jiffies(150));
+
+#else
+    //tanlq 220630 change 150ms to 10ms for usb in,can connet right now,if 150ms,it will usb in->cc int->cc reinit-> disconnect
+    fusb_irq_enable(chip);
+    chip->suspended = false;
+	queue_work(chip->fusb30x_wq, &chip->work);
+    #endif
+	return 0;
+}
+
+static const struct dev_pm_ops fusb30x_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(fusb30x_pm_suspend,
+				fusb30x_pm_resume)
+};
 
 static const struct of_device_id fusb30x_dt_match[] = {
 	{ .compatible = FUSB30X_I2C_DEVICETREE_NAME },
@@ -3346,6 +3850,7 @@ static struct i2c_driver fusb30x_driver = {
 	.driver = {
 		.name = FUSB30X_I2C_DRIVER_NAME,
 		.of_match_table = of_match_ptr(fusb30x_dt_match),
+		.pm = &fusb30x_pm_ops,
 	},
 	.probe = fusb30x_probe,
 	.remove = fusb30x_remove,

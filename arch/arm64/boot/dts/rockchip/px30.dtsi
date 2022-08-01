@@ -134,7 +134,18 @@
 		rockchip,pvtm-ref-temp = <40>;
 		rockchip,pvtm-temp-prop = <(-56) (-56)>;
 		rockchip,thermal-zone = "soc-thermal";
-
+		
+		// 20191203,hsl add.
+		opp-216000000 {
+			opp-hz = /bits/ 64 <216000000>;
+			opp-microvolt = <950000 950000 1350000>;
+			opp-microvolt-L0 = <950000 950000 1350000>;
+			opp-microvolt-L1 = <950000 950000 1350000>;
+			opp-microvolt-L2 = <950000 950000 1350000>;
+			opp-microvolt-L3 = <950000 950000 1350000>;
+			clock-latency-ns = <40000>;
+		};
+		
 		opp-408000000 {
 			opp-hz = /bits/ 64 <408000000>;
 			opp-microvolt = <950000 950000 1350000>;
@@ -145,6 +156,7 @@
 			clock-latency-ns = <40000>;
 			opp-suspend;
 		};
+		
 		opp-600000000 {
 			opp-hz = /bits/ 64 <600000000>;
 			opp-microvolt = <950000 950000 1350000>;
@@ -153,6 +165,7 @@
 			opp-microvolt-L2 = <950000 950000 1350000>;
 			opp-microvolt-L3 = <950000 950000 1350000>;
 			clock-latency-ns = <40000>;
+			//opp-suspend;  // 20210521: 600M/800M/1.0G will crash at FT-SLEEP test.
 		};
 		opp-816000000 {
 			opp-hz = /bits/ 64 <816000000>;
@@ -162,6 +175,7 @@
 			opp-microvolt-L2 = <1000000 1000000 1350000>;
 			opp-microvolt-L3 = <950000  950000  1350000>;
 			clock-latency-ns = <40000>;
+			//opp-suspend; //20191203,hsl add for fast-wakeup.
 		};
 		opp-1008000000 {
 			opp-hz = /bits/ 64 <1008000000>;
@@ -171,7 +185,9 @@
 			opp-microvolt-L2 = <1125000 1125000 1350000>;
 			opp-microvolt-L3 = <1050000 1050000 1350000>;
 			clock-latency-ns = <40000>;
+			//opp-suspend; //20191203,hsl add for fast-wakeup.but arm-volt is fix to 1.0V.
 		};
+		
 		opp-1200000000 {
 			opp-hz = /bits/ 64 <1200000000>;
 			opp-microvolt = <1300000 1300000 1350000>;
@@ -1752,23 +1768,35 @@
 		devfreq-events = <&dfi>;
 		clocks = <&cru SCLK_DDRCLK>;
 		clock-names = "dmc_clk";
-		touchboost_duration = <2000>;
+		touchboost_duration = <2000>;  //20200101: merge from lyx@kernel.
 		operating-points-v2 = <&dmc_opp_table>;
 		ddr_timing = <&ddr_timing>;
-		upthreshold = <40>;
+		upthreshold = <40>;		// 20191203,hsl : 40/20
 		downdifferential = <20>;
+		
+		// 20200617: hsl change for power.we need all freqs.
 		system-status-freq = <
 			/*system status         freq(KHz)*/
-			SYS_STATUS_NORMAL       528000
+			SYS_STATUS_LOW_POWER	194000
+			SYS_STATUS_SUSPEND      194000  	// for fast wake-up. 20210520: for FT-SLEEP-AGING.
+			SYS_STATUS_NORMAL       328000	 
+			SYS_STATUS_VIDEO_1080P  450000
+			SYS_STATUS_BOOST        666000	// when user touch/input.
+			SYS_STATUS_VIDEO_4K  	666000
+			SYS_STATUS_PERFORMANCE  666000
+			SYS_STATUS_ISP          666000
+			SYS_STATUS_REBOOT       666000
+			/*
 			SYS_STATUS_REBOOT       450000
 			SYS_STATUS_SUSPEND      194000
 			SYS_STATUS_VIDEO_1080P  450000
-			SYS_STATUS_BOOST        666000
+			SYS_STATUS_BOOST        528000
 			SYS_STATUS_ISP          666000
 			SYS_STATUS_PERFORMANCE  666000
+			*/
 		>;
-		auto-min-freq = <328000>;
-		auto-freq-en = <1>;
+		auto-min-freq = <328000>; 
+		auto-freq-en = <0>;  //20210520: merge from RK. we ctrl hw DDR freq for pw-power.
 		#cooling-cells = <2>;
 		status = "disabled";
 
@@ -1835,6 +1863,9 @@
 			opp-microvolt-L2 = <975000>;
 			opp-microvolt-L3 = <950000>;
 		};
+		
+		// 20210513: T2 reboot-crash if set max ddr-freq to 786M.
+		/*
 		opp-786000000 {
 			opp-hz = /bits/ 64 <786000000>;
 			opp-microvolt = <1100000>;
@@ -1842,8 +1873,10 @@
 			opp-microvolt-L1 = <1050000>;
 			opp-microvolt-L2 = <1025000>;
 			opp-microvolt-L3 = <1000000>;
-			status = "disabled";
+			//status = "disabled";  // 20191203,hsl.disable don't work,need to comment.
 		};
+		*/
+		
 	};
 
 	pinctrl: pinctrl {
@@ -2176,37 +2209,37 @@
 		spi0 {
 			spi0_clk: spi0-clk {
 				rockchip,pins =
-					<1 RK_PB7 RK_FUNC_3 &pcfg_pull_up_4ma>;
+					<1 RK_PB7 RK_FUNC_3 &pcfg_pull_up_12ma>;
 			};
 
 			spi0_csn: spi0-csn {
 				rockchip,pins =
-					<1 RK_PB6 RK_FUNC_3 &pcfg_pull_up_4ma>;
+					<1 RK_PB6 RK_FUNC_3 &pcfg_pull_up_12ma>;
 			};
 
 			spi0_miso: spi0-miso {
 				rockchip,pins =
-					<1 RK_PB5 RK_FUNC_3 &pcfg_pull_up_4ma>;
+					<1 RK_PB5 RK_FUNC_3 &pcfg_pull_up_12ma>;
 			};
 
 			spi0_mosi: spi0-mosi {
 				rockchip,pins =
-					<1 RK_PB4 RK_FUNC_3 &pcfg_pull_up_4ma>;
+					<1 RK_PB4 RK_FUNC_3 &pcfg_pull_up_12ma>;
 			};
 
 			spi0_clk_hs: spi0-clk-hs {
 				rockchip,pins =
-					<1 RK_PB7 RK_FUNC_3 &pcfg_pull_up_8ma>;
+					<1 RK_PB7 RK_FUNC_3 &pcfg_pull_up_12ma>;
 			};
 
 			spi0_miso_hs: spi0-miso-hs {
 				rockchip,pins =
-					<1 RK_PB5 RK_FUNC_3 &pcfg_pull_up_8ma>;
+					<1 RK_PB5 RK_FUNC_3 &pcfg_pull_up_12ma>;
 			};
 
 			spi0_mosi_hs: spi0-mosi-hs {
 				rockchip,pins =
-					<1 RK_PB4 RK_FUNC_3 &pcfg_pull_up_8ma>;
+					<1 RK_PB4 RK_FUNC_3 &pcfg_pull_up_12ma>;
 			};
 		};
 
@@ -2414,7 +2447,7 @@
 
 			i2s1_2ch_lrck: i2s1-2ch-lrck {
 				rockchip,pins =
-					<2 RK_PC1 RK_FUNC_1 &pcfg_pull_none>;
+					<2 RK_PC1 RK_FUNC_1 &pcfg_pull_none_8ma>;
 			};
 
 			i2s1_2ch_sdi: i2s1-2ch-sdi {
@@ -2631,7 +2664,8 @@
 				rockchip,pins =
 					<3 RK_PA0 RK_FUNC_1 &pcfg_pull_none_12ma>;
 			};
-
+			
+			// 20191019: hsl fix the 103h ghosing. from 12ma to 4ma.
 			lcdc_rgb_m0_hsync_pin: lcdc-rgb-m0-hsync-pin {
 				rockchip,pins =
 					<3 RK_PA1 RK_FUNC_1 &pcfg_pull_none_12ma>;
@@ -2657,7 +2691,7 @@
 					<3 RK_PB2 RK_FUNC_1 &pcfg_pull_none_8ma>,	/* lcdc_d6 */
 					<3 RK_PB1 RK_FUNC_1 &pcfg_pull_none_8ma>,	/* lcdc_d5 */
 					<3 RK_PB0 RK_FUNC_1 &pcfg_pull_none_8ma>,	/* lcdc_d4 */
-					<3 RK_PB7 RK_FUNC_1 &pcfg_pull_none_4ma>,	/* lcdc_d11 */
+					<3 RK_PB7 RK_FUNC_1 &pcfg_pull_none_4ma>,	/* lcdc_d11,20220328,hsl.fix 7.8 */
 					<3 RK_PB6 RK_FUNC_1 &pcfg_pull_none_8ma>,	/* lcdc_d10 */
 					<3 RK_PB5 RK_FUNC_1 &pcfg_pull_none_8ma>,	/* lcdc_d9 */
 					<3 RK_PB4 RK_FUNC_1 &pcfg_pull_none_8ma>,	/* lcdc_d8 */

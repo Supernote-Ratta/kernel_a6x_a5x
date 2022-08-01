@@ -21,4 +21,9 @@ obj-$(CONFIG_ROCKCHIP_DRM_TVE) += rockchip_drm_tve.o
 
 obj-$(CONFIG_ROCKCHIP_RK3066_HDMI) += rk3066_hdmi.o
 obj-$(CONFIG_DRM_ROCKCHIP_RK618) += rk618/
-obj-$(CONFIG_EBC) += eink/
+#obj-$(CONFIG_EBC) += eink/
+obj-$(CONFIG_EBC) += eink_src/
+
+obj-$(CONFIG_HTFY_EBC) += ht_eink/
+obj-$(CONFIG_HTFY_DEBUG) += htfy_dbg.o
+obj-$(CONFIG_HTFY_DUMP) += htfy_dump.o

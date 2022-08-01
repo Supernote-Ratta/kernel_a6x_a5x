@@ -25,48 +25,42 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
-#include <linux/rk_keys.h>
+#include <linux/wakelock.h>
 
 struct rk8xx_pwrkey {
 	struct rk808 *rk8xx;
 	struct input_dev *input_dev;
+
+	// 20220714: delay enter sleep.
+	struct wake_lock wake_lock;
 	int report_key;
+	bool	key_reported;
 };
 
-static struct input_dev *sinput_dev;
+// 20220711: change longer for SNX slow wakeup.
+#ifdef CONFIG_SUPPORT_ULTRU_SLEEP
+#define WAKE_LOCK_JIFFIES	(12 * HZ)			/* 12s */
+#else 
+#define WAKE_LOCK_JIFFIES	(1 * HZ)			/* 1s */
+#endif 
 
-void rk8xx_send_power_key(int state)
+// 20191225,hsl add for hall-cover detect.
+__weak bool rk_key_hall_covered(void)
 {
-	if (!sinput_dev)
-		return;
-	if (state) {
-		input_report_key(sinput_dev, KEY_POWER, 1);
-		input_sync(sinput_dev);
-	} else {
-		input_report_key(sinput_dev, KEY_POWER, 0);
-		input_sync(sinput_dev);
-	}
+	return false;
 }
-EXPORT_SYMBOL(rk8xx_send_power_key);
-
-void rk8xx_send_wakeup_key(void)
-{
-	if (!sinput_dev)
-		return;
-
-	input_report_key(sinput_dev, KEY_WAKEUP, 1);
-	input_sync(sinput_dev);
-	input_report_key(sinput_dev, KEY_WAKEUP, 0);
-	input_sync(sinput_dev);
-}
-EXPORT_SYMBOL(rk8xx_send_wakeup_key);
 
 static irqreturn_t rk8xx_pwrkey_irq_falling(int irq, void *data)
 {
 	struct rk8xx_pwrkey *pwr = data;
 
-	input_report_key(pwr->input_dev, pwr->report_key, 1);
-	input_sync(pwr->input_dev);
+	if(!rk_key_hall_covered()) {
+		input_report_key(pwr->input_dev, pwr->report_key, 1);
+		input_sync(pwr->input_dev);
+		pwr->key_reported = true;
+		wake_lock_timeout(&pwr->wake_lock, WAKE_LOCK_JIFFIES);
+		dev_info(&pwr->input_dev->dev, "rk8xx_pwrkey down,key=%d!\n", pwr->report_key);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -75,8 +69,11 @@ static irqreturn_t rk8xx_pwrkey_irq_rising(int irq, void *data)
 {
 	struct rk8xx_pwrkey *pwr = data;
 
-	input_report_key(pwr->input_dev, pwr->report_key, 0);
-	input_sync(pwr->input_dev);
+	if(pwr->key_reported) {
+		input_report_key(pwr->input_dev, pwr->report_key, 0);
+		input_sync(pwr->input_dev);
+		pwr->key_reported = false;
+	}
 
 	return IRQ_HANDLED;
 }
@@ -118,8 +115,6 @@ static int rk8xx_pwrkey_probe(struct platform_device *pdev)
 					BIT_MASK(pwrkey->report_key);
 	platform_set_drvdata(pdev, pwrkey);
 
-	sinput_dev = pwrkey->input_dev;
-
 	/* requeset rise and fall irqs */
 	rise_irq = platform_get_irq(pdev, 0);
 	if (rise_irq < 0) {
@@ -156,7 +151,8 @@ static int rk8xx_pwrkey_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Can't register power button: %d\n", err);
 		return err;
 	}
-	input_set_capability(pwrkey->input_dev, EV_KEY, KEY_WAKEUP);
+
+	wake_lock_init(&pwrkey->wake_lock, WAKE_LOCK_SUSPEND, pwrkey->input_dev->name);
 
 	return 0;
 }

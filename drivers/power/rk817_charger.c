@@ -34,7 +34,7 @@
 #include <linux/timer.h>
 #include <linux/workqueue.h>
 
-static int dbg_enable;
+static int dbg_enable = 0;
 module_param_named(dbg_level, dbg_enable, int, 0644);
 
 #define DBG(args...) \
@@ -44,7 +44,8 @@ module_param_named(dbg_level, dbg_enable, int, 0644);
 		} \
 	} while (0)
 
-#define CHARGE_DRIVER_VERSION		"1.0"
+// 20210415: add set_prop callback.
+#define CHARGE_DRIVER_VERSION		"1.1"
 
 #define DISABLE	0x00
 #define ENABLE	0x01
@@ -61,7 +62,7 @@ module_param_named(dbg_level, dbg_enable, int, 0644);
 #define DEFAULT_CHRG_VOLTAGE	4200
 #define DEFAULT_CHRG_CURRENT	1400
 #define DEFAULT_CHRG_TERM_MODE	1
-#define DEFAULT_CHRG_TERM_CUR		150
+#define DEFAULT_CHRG_TERM_CUR		300 //150
 #define SAMPLE_RES_10MR		10
 #define SAMPLE_RES_20MR		20
 #define SAMPLE_RES_DIV1		1
@@ -69,6 +70,7 @@ module_param_named(dbg_level, dbg_enable, int, 0644);
 
 #define INPUT_450MA		450
 #define INPUT_1500MA	1500
+#define INPUT_850MA		850
 
 #define CURRENT_TO_ADC(current, samp_res)	\
 	(current * 1000 * samp_res / 172)
@@ -276,6 +278,7 @@ struct charger_platform_data {
 	int sample_res;
 	int otg5v_suspend_enable;
 	bool extcon;
+    int gate_function_disable;
 };
 
 struct rk817_charger {
@@ -304,6 +307,8 @@ struct rk817_charger {
 	unsigned int bc_event;
 	enum charger_t usb_charger;
 	enum charger_t dc_charger;
+
+	bool    force_uncharge;
 	u8 ac_in;
 	u8 usb_in;
 	u8 otg_in;
@@ -355,7 +360,10 @@ static int rk817_charge_ac_get_property(struct power_supply *psy,
 		else
 			val->intval = (charge->ac_in | charge->dc_in);
 
-		DBG("report online: %d\n", val->intval);
+		if(charge->force_uncharge) val->intval = 0;
+        
+		DBG("report online: %d,ac_in=%d,dc_in=%d, uncharge=%d\n", val->intval, 
+		    charge->ac_in, charge->dc_in, charge->force_uncharge);
 		break;
 	case POWER_SUPPLY_PROP_STATUS:
 		if (charge->pdata->virtual_power)
@@ -392,8 +400,11 @@ static int rk817_charge_usb_get_property(struct power_supply *psy,
 			val->intval = 1;
 		else
 			val->intval = charge->usb_in;
-
-		DBG("report online: %d\n", val->intval);
+			
+        if(charge->force_uncharge) val->intval = 0;
+        
+		DBG("report online: %d,usb_in=%d,uncharge=%d\n", val->intval, 
+		    charge->usb_in, charge->force_uncharge);
 		break;
 	case POWER_SUPPLY_PROP_STATUS:
 		if (charge->pdata->virtual_power)
@@ -417,12 +428,35 @@ static int rk817_charge_usb_get_property(struct power_supply *psy,
 	return ret;
 }
 
+static int rk817_charge_dc_usb_set_property(struct power_supply *psy,
+					 enum power_supply_property psp,
+					 const union power_supply_propval *val)
+{
+	struct rk817_charger *charge = power_supply_get_drvdata(psy);
+	int ret = 0;
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_ONLINE:
+	    charge->force_uncharge = val->intval;
+		DBG("set online:uncharg=%d,usb_in=%d, ac_in=%d, dc_in=%d\n", val->intval,
+		    charge->usb_in, charge->ac_in, charge->dc_in);
+		power_supply_changed(psy);
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
 static const struct power_supply_desc rk817_ac_desc = {
 	.name		= "ac",
 	.type		= POWER_SUPPLY_TYPE_MAINS,
 	.properties	= rk817_ac_props,
 	.num_properties	= ARRAY_SIZE(rk817_ac_props),
 	.get_property	= rk817_charge_ac_get_property,
+	.set_property   = rk817_charge_dc_usb_set_property,
 };
 
 static const struct power_supply_desc rk817_usb_desc = {
@@ -431,6 +465,7 @@ static const struct power_supply_desc rk817_usb_desc = {
 	.properties	= rk817_usb_props,
 	.num_properties	= ARRAY_SIZE(rk817_usb_props),
 	.get_property	= rk817_charge_usb_get_property,
+	.set_property   = rk817_charge_dc_usb_set_property,
 };
 
 static int rk817_charge_init_power_supply(struct rk817_charger *charge)
@@ -535,6 +570,7 @@ static void rk817_charge_usb_to_sys_enable(struct rk817_charger *charge)
 
 static void rk817_charge_sys_can_sd_disable(struct rk817_charger *charge)
 {
+
 	rk817_charge_field_write(charge, SYS_CAN_SD, DISABLE);
 }
 
@@ -610,6 +646,7 @@ static void rk817_charge_set_chrg_voltage(struct rk817_charger *charge,
 static void rk817_charge_set_chrg_current(struct rk817_charger *charge,
 					  int chrg_current)
 {
+	dev_err(charge->dev, "set_chrg_current:%d ma!\n", chrg_current);
 	if (chrg_current < 500 || chrg_current > 3500)
 		dev_err(charge->dev, "the charge current is error!\n");
 
@@ -656,6 +693,7 @@ static void rk817_charge_ilimit_enable(struct rk817_charger *charge)
 static void rk817_charge_set_input_current(struct rk817_charger *charge,
 					   int input_current)
 {
+	dev_err(charge->dev, "set_input_current:%d ma!\n", input_current);
 	if (input_current < 80 || input_current > 3000)
 		dev_err(charge->dev, "the input current is error.\n");
 
@@ -698,6 +736,7 @@ static void rk817_charge_set_term_current_analog(struct rk817_charger *charge,
 {
 	int value;
 
+#if 1
 	if (chrg_current < 200)
 		value = CHRG_TERM_150MA;
 	else if (chrg_current < 300)
@@ -706,7 +745,13 @@ static void rk817_charge_set_term_current_analog(struct rk817_charger *charge,
 		value = CHRG_TERM_300MA;
 	else
 		value = CHRG_TERM_400MA;
-
+#else
+    // 20210227: set charging finish term current.
+    if (chrg_current < 200)
+		value = CHRG_TERM_200MA;
+	else //if (chrg_current < 300)
+		value = CHRG_TERM_200MA;
+#endif 
 	rk817_charge_field_write(charge,
 				 CHRG_TERM_ANA_SEL,
 				 value);
@@ -786,7 +831,7 @@ static void rk817_charge_set_chrg_param(struct rk817_charger *charge,
 						       charge->max_input_current);
 		else
 			rk817_charge_set_input_current(charge,
-						       INPUT_1500MA);
+						       INPUT_850MA/*INPUT_1500MA*/); //20191230,hsl.
 		power_supply_changed(charge->usb_psy);
 		power_supply_changed(charge->ac_psy);
 		break;
@@ -1265,7 +1310,10 @@ static void rk817_charge_pre_init(struct rk817_charger *charge)
 	rk817_charge_set_chrg_finish_condition(charge);
 
 	rk817_charge_otg_disable(charge);
-	rk817_charge_sys_can_sd_disable(charge);
+    if (!charge->pdata->gate_function_disable) {
+
+        rk817_charge_sys_can_sd_disable(charge);
+    }
 	rk817_charge_usb_to_sys_enable(charge);
 	rk817_charge_enable_charge(charge);
 
@@ -1366,6 +1414,11 @@ static int rk817_charge_parse_dt(struct rk817_charger *charge)
 		dev_err(dev, "otg5v_suspend_enable missing!\n");
 	}
 
+    ret = of_property_read_u32(np, "gate_function_disable", &pdata->gate_function_disable);
+    if (ret < 0) {
+        dev_err(dev, "gate_function_disable missing!\n");
+        pdata->gate_function_disable = 0;
+    }
 	if (!is_battery_exist(charge))
 		pdata->virtual_power = 1;
 

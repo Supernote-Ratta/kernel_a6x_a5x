@@ -885,7 +885,13 @@ err_out:
 }
 
 static const struct rockchip_domain_info px30_pm_domains[] = {
+	/* changed tower: for 4G or not 4G modem */
+#if !defined(CONFIG_LTE)
 	[PX30_PD_USB]		= DOMAIN_PX30(5, 5, 10, false),
+#else
+	[PX30_PD_USB]		= DOMAIN_PX30(5, 5, 10, true), // 20210520: 4G/SLEEP patch from LYX@RK.
+#endif
+	/* change end */
 	[PX30_PD_SDCARD]	= DOMAIN_PX30(8, 8, 9, false),
 	[PX30_PD_GMAC]		= DOMAIN_PX30(10, 10, 6, false),
 	[PX30_PD_MMC_NAND]	= DOMAIN_PX30(11, 11, 5, false),

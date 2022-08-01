@@ -65,8 +65,13 @@ if (chip == WIFI_AP6210) {
 }
 
 if (chip == WIFI_AP6212) {
-    sprintf(fw, "%s%s", ANDROID_FW_PATH, "fw_bcm43438a0.bin");
-        sprintf(nvram, "%s%s", ANDROID_FW_PATH, "nvram_ap6212.txt");
+#ifdef CONFIG_CYW_BCMDHD
+    sprintf(fw, "%s%s", ANDROID_FW_PATH, "cyw43438.bin"); //fw_bcm43438a0.bin cyw43438-7.46.58.28.bin
+        sprintf(nvram, "%s%s", ANDROID_FW_PATH, "nvram_azw372.txt"); //nvram_ap6212.txt nvram_azw372.txt
+#else
+     sprintf(fw, "%s%s", ANDROID_FW_PATH, "fw_bcm43438a0.bin");
+         sprintf(nvram, "%s%s", ANDROID_FW_PATH, "nvram_ap6212.txt");
+#endif
 }
 
 if (chip == WIFI_AP6234) {

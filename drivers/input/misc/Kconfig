@@ -103,12 +103,6 @@ config INPUT_E3X0_BUTTON
 	  To compile this driver as a module, choose M here: the
 	  module will be called e3x0_button.
 
-config INPUT_HALL_SENSOR
-	bool "Hall sensor driver"
-	default y
-	help
-	  This enable hall driver.
-
 config INPUT_PCSPKR
 	tristate "PC Speaker support"
 	depends on PCSPKR_PLATFORM

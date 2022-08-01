@@ -14,6 +14,17 @@
 
 #include <linux/i2c.h>
 #include <linux/hrtimer.h>
+#include <linux/switch.h>
+#include <linux/input.h>
+#include <linux/platform_device.h>
+#include <linux/wakelock.h>
+
+#include "../usb/dwc2/core.h"
+extern struct device *g_device;
+extern ssize_t otg_mode_store(struct device *device,
+			      struct device_attribute *attr,
+			      const char *buf, size_t count);
+extern struct device_attribute dev_attr_otg_mode;
 
 const char *FUSB_DT_INTERRUPT_INTN =	"fsc_interrupt_int_n";
 #define FUSB_DT_GPIO_INTN		"fairchild,int_n"
@@ -88,7 +99,7 @@ enum connection_state {
 	policy_snk_transition_default,
 
 	/* PR SWAP */
-	policy_src_prs_evaluate,
+	policy_src_prs_evaluate, //30
 	policy_src_prs_accept,
 	policy_src_prs_transition_to_off,
 	policy_src_prs_source_off,
@@ -112,7 +123,7 @@ enum connection_state {
 	policy_vcs_dfp_send_ps_rdy,
 
 	policy_vcs_ufp_evaluate_swap,
-	policy_vcs_ufp_reject,
+	policy_vcs_ufp_reject,//50
 	policy_vcs_ufp_accept,
 	policy_vcs_ufp_wait_for_dfp_vconn,
 	policy_vcs_ufp_turn_off_vconn,
@@ -123,7 +134,7 @@ enum connection_state {
 	policy_drs_ufp_accept,
 	policy_drs_ufp_reject,
 	policy_drs_ufp_change,
-	policy_drs_ufp_send_swap,
+	policy_drs_ufp_send_swap,//60
 
 	policy_drs_dfp_evaluate,
 	policy_drs_dfp_accept,
@@ -133,6 +144,9 @@ enum connection_state {
 
 	attach_try_src,
 	attach_try_snk,
+
+	attach_wait_audio_acc,
+	attached_audio_acc,
 };
 
 enum vdm_state {
@@ -262,6 +276,10 @@ enum role_mode {
 #define CC_STATE_TOGSS_CC1	SBF(1, 0)
 #define CC_STATE_TOGSS_CC2	SBF(1, 1)
 #define CC_STATE_TOGSS_IS_UFP	SBF(1, 2)
+
+#define CC_STATE_TOGSS_IS_DFP	SBF(2, 2)
+#define CC_STATE_TOGSS_IS_ACC	SBF(3, 2)
+#define CC_STATE_TOGSS_ROLE	SBF(3, 2)
 
 #define INTERRUPTA_HARDRST	SBF(1, 0)
 #define INTERRUPTA_SOFTRST	SBF(1, 1)
@@ -408,9 +426,9 @@ enum role_mode {
 #define CAP_VPDO_CURRENT(PDO)		((PDO >> 0) & 0x3ff)
 
 enum CC_ORIENTATION {
-	NONE,
-	CC1,
-	CC2,
+	TYPEC_ORIENTATION_NONE,
+	TYPEC_ORIENTATION_CC1,
+	TYPEC_ORIENTATION_CC2,
 };
 
 enum typec_cc_polarity {
@@ -448,6 +466,7 @@ struct notify_info {
 	int pin_assignment_def;
 	bool attention;
 	u32 dp_status;
+	u32 dp_caps;
 };
 
 enum tx_state {
@@ -473,6 +492,7 @@ struct fusb30x_chip {
 	struct device *dev;
 	struct regmap *regmap;
 	struct work_struct work;
+	struct delayed_work delayed_work;
 	struct workqueue_struct *fusb30x_wq;
 	struct hrtimer timer_state_machine;
 	struct hrtimer timer_mux_machine;
@@ -485,6 +505,7 @@ struct fusb30x_chip {
 	struct gpio_desc *gpio_vbus_other;
 	struct gpio_desc *gpio_int;
 	struct gpio_desc *gpio_discharge;
+	struct gpio_desc *gpio_switch;
 	int timer_state;
 	int timer_mux;
 	int port_num;
@@ -545,6 +566,23 @@ struct fusb30x_chip {
 	bool vconn_supported;
 	bool try_role_complete;
 	enum role_mode try_role;
+    struct input_dev *input;
+	bool suspended;
+	bool ready;
+	//int cur_headset_status;
+	//struct switch_dev sdev;
+	struct platform_device *extusb;
+	struct dwc2_hsotg *dwc2;
+
+    // 20210522: ctrl regulator for save power.
+	struct regulator *supply;
+
+    // 20210522: for usb-anolo headset.
+	struct switch_dev sdev;
+	bool   needs_init;
+    //tanlq 220630 add for typec headset, lock system
+	struct wake_lock 		suspend_lock;
+	struct wake_lock 		detect_lock;
 };
 
 #endif /* FUSB302_H */

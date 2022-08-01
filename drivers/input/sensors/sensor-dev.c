@@ -480,6 +480,7 @@ error:
 
 static int sensor_reset_rate(struct i2c_client *client, int rate)
 {
+#if 0
 	struct sensor_private_data *sensor = (struct sensor_private_data *) i2c_get_clientdata(client);
 	int result = 0;
 
@@ -510,6 +511,9 @@ static int sensor_reset_rate(struct i2c_client *client, int rate)
 	}
 
 	return result;
+#else
+	return 0;
+#endif
 }
 
 static void  sensor_delaywork_func(struct work_struct *work)
@@ -1800,7 +1804,15 @@ int sensor_probe(struct i2c_client *client, const struct i2c_device_id *devid)
 	sensor->pdata = pdata;
 	sensor->type = type;
 	sensor->i2c_id = (struct i2c_device_id *)devid;
-
+	
+	sensor->supply = devm_regulator_get(&client->dev, "power");
+	if (IS_ERR(sensor->supply)) {
+		dev_err(&client->dev, " No supply found! continue...\n");
+		sensor->supply = NULL;
+	}else{
+		dev_err(&client->dev, "%s: supply found! continue...\n", __func__);
+	}
+	sensor->is_poweron = false;
 	memset(&(sensor->axis), 0, sizeof(struct sensor_axis));
 	mutex_init(&sensor->data_mutex);
 	mutex_init(&sensor->operation_mutex);
@@ -2048,12 +2060,14 @@ static const struct i2c_device_id sensor_id[] = {
 	{"ls_photoresistor", LIGHT_ID_PHOTORESISTOR},
 	{"ls_us5152", LIGHT_ID_US5152},
 	{"ls_stk3410", LIGHT_ID_STK3410},
+	{"ls_em20918", LIGHT_ID_EM20918},
 	/*proximity sensor*/
 	{"psensor", PROXIMITY_ID_ALL},
 	{"proximity_al3006", PROXIMITY_ID_AL3006},
 	{"ps_stk3171", PROXIMITY_ID_STK3171},
 	{"ps_ap321xx", PROXIMITY_ID_AP321XX},
 	{"ps_stk3410", PROXIMITY_ID_STK3410},
+	{"ps_em20918", PROXIMITY_ID_EM20918},
 	/*temperature*/
 	{"temperature", TEMPERATURE_ID_ALL},
 	{"tmp_ms5607", TEMPERATURE_ID_MS5607},
@@ -2099,8 +2113,10 @@ static struct of_device_id sensor_dt_ids[] = {
 	{ .compatible = "ls_photoresistor" },
 	{ .compatible = "ls_us5152" },
 	{ .compatible = "ls_stk3410" },
+	{ .compatible = "ls_em20918" },
 	{ .compatible = "ps_stk3410" },
 
+	{ .compatible = "ps_em20918" },
 	/*temperature sensor*/
 	{ .compatible = "tmp_ms5607" },
 

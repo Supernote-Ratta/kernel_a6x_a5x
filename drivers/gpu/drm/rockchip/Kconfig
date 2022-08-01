@@ -123,3 +123,4 @@ config ROCKCHIP_RK3066_HDMI
 
 source "drivers/gpu/drm/rockchip/rk618/Kconfig"
 source "drivers/gpu/drm/rockchip/eink/Kconfig"
+source "drivers/gpu/drm/rockchip/ht_eink/Kconfig"

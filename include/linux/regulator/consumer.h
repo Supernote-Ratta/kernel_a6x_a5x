@@ -207,7 +207,6 @@ void devm_regulator_bulk_unregister_supply_alias(struct device *dev,
 /* regulator output control and status */
 int __must_check regulator_enable(struct regulator *regulator);
 int regulator_disable(struct regulator *regulator);
-int regulator_suspend_disable(struct regulator *regulator);
 int regulator_force_disable(struct regulator *regulator);
 int regulator_is_enabled(struct regulator *regulator);
 int regulator_disable_deferred(struct regulator *regulator, int ms);

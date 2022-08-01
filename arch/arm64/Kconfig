@@ -1,3 +1,18 @@
+
+config SUPPORT_ULTRU_SLEEP
+	bool "support utral low sleep from RK. current only SNX support."
+	default n
+
+config SUPPORT_HALL_BUTTON
+	bool "weather support hall buttom for cover. current suppport at T2"
+	default n
+	
+config DEBUG_BUILD
+	bool "Build Kernel With DEBUG_BUILD"
+	default y
+	help
+	  Build Kernel With CONFIG_DEBUG_BUILD.
+	  
 config ARM64
 	def_bool y
 	select ACPI_CCA_REQUIRED if ACPI

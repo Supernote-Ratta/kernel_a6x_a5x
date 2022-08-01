@@ -48,9 +48,12 @@
 #include <linux/notifier.h>
 
 #include "ft5x_ts.h"
+#include <linux/pm_wakeirq.h>
+
+#include <linux/htfy_dbg.h>  // 20191031,hsl add.20191107--for function-call and  fb_power_off.
 
 //---------------------------------------------
-#define NO_ELINK
+//#define NO_ELINK
 enum{
     DEBUG_INIT = 1U << 0,
     DEBUG_SUSPEND = 1U << 1,
@@ -61,9 +64,11 @@ enum{
     DEBUG_OTHERS_INFO = 1U << 6,
 };
 
-static u32 debug_mask = DEBUG_INIT;
+static u32 debug_mask = DEBUG_SUSPEND;
 
-#define dprintk(level_mask,fmt,arg...)  printk("***ft5x_ts_sunty***"fmt, ## arg)
+#define dprintk(level_mask,fmt,arg...)   if( debug_mask & level_mask ) { \
+	printk("***ft5x_ts_sunty***"fmt, ## arg); }
+
 module_param_named(debug_mask,debug_mask,int,S_IRUGO | S_IWUSR | S_IWGRP);
 
 //---------------------------------------------
@@ -157,7 +162,7 @@ struct ts_event {
     u16 au16_x[CFG_MAX_TOUCH_POINTS];   /*x coordinate */
     u16 au16_y[CFG_MAX_TOUCH_POINTS];   /*y coordinate */
     u8 au8_touch_event[CFG_MAX_TOUCH_POINTS];   /*touch event:
-                    0 -- down; 1-- up; 2 -- contact */
+                    0 -- down; 1-- up; 2 -- contact(MOVE) */
     u8 au8_finger_id[CFG_MAX_TOUCH_POINTS]; /*touch ID */
     u8 au8_xy[CFG_MAX_TOUCH_POINTS];
     u16 pressure;
@@ -206,6 +211,10 @@ struct ft5x_ts_data {
     int revert_x_flag;
     int revert_y_flag;
     int exchange_x_y_flag;
+
+	bool is_enable;
+	bool is_fboff;
+	bool after_resume;
 
 };
 
@@ -1066,39 +1075,64 @@ static int ft5x0x_read_Touchdata(struct ft5x_ts_data *data)
         dev_err(&data->client->dev, "%s read touchdata failed.\n", __func__);
         return ret;
     }
-    memset(event, 0, sizeof(struct ts_event));
+
+	// 20200527: 这个 memset 会把 touchs 数据清除，导致 修正的 release 操作无法实现。
+    //memset(event, 0, sizeof(struct ts_event));
 
     event->touch_point_num = buf[FT_TOUCH_POINT_NUM] & 0x0F;
 
-    dprintk(DEBUG_X_Y_INFO, "event->touch_point_num = %d\n", event->touch_point_num);
+    dprintk(DEBUG_X_Y_INFO, "event->touch_point_num = %d,touchs=0x%x\n", event->touch_point_num, event->touchs);
 
+    // 20200527: 在亮屏休眠的情况下，快速点击TP唤醒系统，但是获取不到 TP信息，原因是系统 resume之后再去读取TP
+    // 信息，此时获取到的 touch_point_num 是 0.
+    #if 0
+	if(!data->is_fboff) {
+		// ft5x:point num=0,buf=0x00 0x00 0x00 0x40 0x75 0x00   -- 无消息
+		// ft5x:point num=1,buf=0x00 0x00 0x01 0x80 0x72 0x00	-- 有消息
+		// ft5x: 00 00 01 01 4b 00 23 3f 30 ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff
+		//printk("ft5x:point num=%d,buf=0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n", event->touch_point_num,
+		//	buf[0], buf[1], buf[2], buf[3], buf[4], buf[5] );
+		printk("ft5x: %*ph\n", (int)sizeof(buf), buf);
+	}
+	#endif
+
+	// 20200526: 如果 TP 被 disable 了，我们也需要先把数据读回来，否则可能 TP 的 irq 会一直保持
+    // 高电平。我们此处 模拟所有的触摸点弹起状态上报。否则 inputFlinger 会发生异常。
     event->touch_point = 0;
-    for (i = 0; i < CFG_MAX_TOUCH_POINTS; i++) {
+    if( !data->is_enable ) {
+    	dev_err(&data->client->dev, "%s: fix data for release,touch=0x%x,cur points=%d\n", __func__,
+    		event->touchs, event->touch_point_num);
+    	if(event->touchs == 0) { // 如果所有的点都已经 release,则不需要处理。
+    		return -2;
+    	}
+    } else {
+	    for (i = 0; i < CFG_MAX_TOUCH_POINTS; i++) {
 
-        pointid = (buf[FT_TOUCH_ID_POS + FT_TOUCH_STEP * i]) >> 4;
-        if (pointid >= FT_MAX_ID) {
-            break;
-        }
+	        pointid = (buf[FT_TOUCH_ID_POS + FT_TOUCH_STEP * i]) >> 4;
+	        if (pointid >= FT_MAX_ID) {
+	            break;
+	        }
 
-        event->touch_point++;
-        event->au16_x[i] =
-            (((s16) buf[FT_TOUCH_X_H_POS + FT_TOUCH_STEP * i]) & 0x0F) <<
-            8 | (((s16) buf[FT_TOUCH_X_L_POS + FT_TOUCH_STEP * i])& 0xFF);
-        event->au16_y[i] =
-            (((s16) buf[FT_TOUCH_Y_H_POS + FT_TOUCH_STEP * i]) & 0x0F) <<
-            8 | (((s16) buf[FT_TOUCH_Y_L_POS + FT_TOUCH_STEP * i]) & 0xFF);
-        event->au8_touch_event[i] =
-            buf[FT_TOUCH_EVENT_POS + FT_TOUCH_STEP * i] >> 6;
-        event->au8_finger_id[i] =
-            (buf[FT_TOUCH_ID_POS + FT_TOUCH_STEP * i]) >> 4;
-        event->au8_xy[i] = (unsigned char)buf[FT_TOUCH_XY_POS + FT_TOUCH_STEP * i];
+	        event->touch_point++;
+	        event->au16_x[i] =
+	            (((s16) buf[FT_TOUCH_X_H_POS + FT_TOUCH_STEP * i]) & 0x0F) <<
+	            8 | (((s16) buf[FT_TOUCH_X_L_POS + FT_TOUCH_STEP * i])& 0xFF);
+	        event->au16_y[i] =
+	            (((s16) buf[FT_TOUCH_Y_H_POS + FT_TOUCH_STEP * i]) & 0x0F) <<
+	            8 | (((s16) buf[FT_TOUCH_Y_L_POS + FT_TOUCH_STEP * i]) & 0xFF);
+	        event->au8_touch_event[i] =
+	            buf[FT_TOUCH_EVENT_POS + FT_TOUCH_STEP * i] >> 6;
+	        event->au8_finger_id[i] =
+	            (buf[FT_TOUCH_ID_POS + FT_TOUCH_STEP * i]) >> 4;
+	        event->au8_xy[i] = (unsigned char)buf[FT_TOUCH_XY_POS + FT_TOUCH_STEP * i];
 
-        dprintk(DEBUG_X_Y_INFO, "id=%d event=%d x=%d y=%d\n", event->au8_finger_id[i],
-            event->au8_touch_event[i], event->au16_x[i], event->au16_y[i]);
+	        dprintk(DEBUG_X_Y_INFO, "id=%d event=%d x=%d y=%d,points=%d\n", event->au8_finger_id[i],
+	            event->au8_touch_event[i], event->au16_x[i], event->au16_y[i], event->touch_point);
 
+	    }
+
+	    event->pressure = FT_PRESS;
     }
-
-    event->pressure = FT_PRESS;
 
     return 0;
 }
@@ -1147,15 +1181,15 @@ static void ft5x_report_value(struct ft5x_ts_data *data)
             touchs |= BIT(event->au8_finger_id[i]);
             event->touchs |= BIT(event->au8_finger_id[i]);
 
-            dprintk(DEBUG_X_Y_INFO, "au8_finger_id[%d] = %d:x = %d,y=%d,max_x=%d,may_y=%d\n", i ,
-                event->au8_finger_id[i], x, y, data->screen_max_x, data->screen_max_y);
+            dprintk(DEBUG_X_Y_INFO, "au8_finger_id[%d] = %d:x = %d,y=%d,max_x=%d,may_y=%d,touchs=0x%x/0x%x\n", i ,
+                event->au8_finger_id[i], x, y, data->screen_max_x, data->screen_max_y, event->touchs, touchs);
 
         } else {
 
             uppoint++;
             input_mt_report_slot_state(data->input_dev, MT_TOOL_FINGER, false);
             event->touchs &= ~BIT(event->au8_finger_id[i]);
-            dprintk(DEBUG_X_Y_INFO, "here release finger_id(%d).\n", event->au8_finger_id[i]);
+            dprintk(DEBUG_X_Y_INFO, "here release finger_id0(%d).\n", event->au8_finger_id[i]);
         }
     }
 
@@ -1163,7 +1197,7 @@ static void ft5x_report_value(struct ft5x_ts_data *data)
         for(i = 0; i < CFG_MAX_TOUCH_POINTS; i++){
             // here 'i' is equal finger_id
             if(BIT(i) & (event->touchs ^ touchs)){
-                dprintk(DEBUG_X_Y_INFO, "release finger_id(%d).\n", i);
+                dprintk(DEBUG_X_Y_INFO, "release finger_id1(%d).\n", i);
                 input_mt_slot(data->input_dev, i);
                 input_mt_report_slot_state(data->input_dev, MT_TOOL_FINGER, false);
             }
@@ -1180,24 +1214,16 @@ static void ft5x_report_value(struct ft5x_ts_data *data)
     input_sync(data->input_dev);
 
 }
-#ifndef NO_ELINK
-
-extern void sm8951_fast_wakeup(void);
-#endif
 
 static void ft5x_ts_pen_irq_work(struct work_struct *work)
 {
     struct ft5x_ts_data * ts = container_of(work, struct ft5x_ts_data, pen_event_work);
 
-    dprintk(DEBUG_INT_INFO,"enter %s.\n", __func__);
+    dprintk(DEBUG_INT_INFO,"%s:is_enable=%d,fb_off=%d\n", __func__, ts->is_enable, ts->is_fboff);
     if (ft5x0x_read_Touchdata(ts) == 0) {
-#ifndef NO_ELINK
-        sm8951_fast_wakeup(); // 20190227,hsl add for Eink-Tcon.
-#endif
         ft5x_report_value(ts);
     }
-
-    ft5x_set_irq_enabled(ts, true);
+    //if(ts->is_enable ) ft5x_set_irq_enabled(ts, true);
 }
 
 
@@ -1205,14 +1231,22 @@ irqreturn_t ft5x_ts_interrupt(int irq, void *dev_id)
 {
     struct ft5x_ts_data *ts = (struct ft5x_ts_data *)dev_id;
 
-    dprintk(DEBUG_INT_INFO,"==========ft5x_ts TS Interrupt,irq=%d======\n", ts->irq);
+    dprintk(DEBUG_INT_INFO,"==========Interrupt,irq=%d======\n", ts->irq);
 
-    disable_irq_nosync(ts->irq);
-    ts->irq_enabled = false;
+	// 20200526: 我们 设置 irq 的时候，如果采用 LEVEL 模式，此处需要 disable irq.如果
+	// 采用 RISING/FALLING 模式，则此处不需要 disable irq.
+    //disable_irq_nosync(ts->irq);
+    //ts->irq_enabled = false;
+
 #if 1
-    if (!work_pending(&ts->pen_event_work)) {
-        queue_work(ts->ts_workqueue, &ts->pen_event_work);
-    }
+    //if (!work_pending(&ts->pen_event_work)) {
+    	// 20200526: must make sure work is run after irq,or the ts->irq will be disable.and
+    	// queue_work function will check pending flag.
+	if(!ts->after_resume){ //201013 tanlq ,when resume, cpu reg make a fake interrupt
+    	queue_work(ts->ts_workqueue, &ts->pen_event_work);
+	}
+	ts->after_resume = false;
+    //}
 #endif
     return IRQ_HANDLED;
 }
@@ -1221,7 +1255,7 @@ static void ft5x_resume_events(struct work_struct *work)
 {
     int i = 0;
     struct ft5x_ts_data * data = container_of(work, struct ft5x_ts_data, resume_events_work);
-
+	dprintk(DEBUG_INIT,"ft5x_resume_events \n");
     ft5x_set_power_enabled(data, true);
     delay_ms(10);
     ft5x_reset(data);
@@ -1250,11 +1284,38 @@ static void ft5x_resume_events(struct work_struct *work)
 
 }
 
+static void ft5x_ts_power_ctrl(struct ft5x_ts_data *data, bool fb_off)
+{
+	if( fb_off){
+		// 20190306：进入真正休眠模式（功耗大概 40ua），只有复位才能唤醒。
+		//ft5x_set_reg(FT5X0X_REG_PMODE, PMODE_HIBERNATE);
+		//delay_ms(10);
+		ft5x_set_irq_enabled(data, false);
+		ft5x_set_power_enabled(data, false);
+	} else {
+		ft5x_set_power_enabled(data, true);
+		data->after_resume = true;
+		//		printk("%s:irq before gpio value=%d!\n", __func__ ,
+		//	gpio_get_value(desc_to_gpio(data->irq_gpio)));
+		//ft5x_reset(data);//tanlq add 201012 for int_irq up too late
+		//delay_ms(400);//tanlq add 201012 for int_irq up too late
+
+		//printk("%s:irq after gpio value=%d!\n", __func__ ,
+		//	gpio_get_value(desc_to_gpio(data->irq_gpio)));
+		ft5x_set_irq_enabled(data, true);
+	}
+}
+
 static int ft5x_ts_suspend(struct ft5x_ts_data *data)
 {
 
-    dprintk(DEBUG_SUSPEND,"==ft5x_ts_suspend=\n");
+    dprintk(DEBUG_SUSPEND,"==ft5x_ts_suspend= fb_power_off=%d,is_fboff=%d\n",fb_power_off(), data->is_fboff);
     //dprintk(DEBUG_SUSPEND,"CONFIG_PM: write FT5X0X_REG_PMODE .\n");
+#if 1  // 20191207: we do this at fb-notify.
+		if( !data->is_fboff /*fb_power_off()*/) {
+			enable_irq_wake(data->irq);
+		}
+#else
 
     cancel_work_sync(&data->pen_event_work);
     flush_workqueue(data->ts_workqueue);
@@ -1265,17 +1326,20 @@ static int ft5x_ts_suspend(struct ft5x_ts_data *data)
 
     ft5x_set_irq_enabled(data, false);
     ft5x_set_power_enabled(data, false);
-
+#endif
     return 0;
 }
 
 static int ft5x_ts_resume(struct ft5x_ts_data *data)
 {
-
-    dprintk(DEBUG_SUSPEND,"==CONFIG_PM:ft5x_ts_resume== \n");
-
+    dprintk(DEBUG_SUSPEND,"=ft5x_ts_resume== fb_power_off=%d,is_suspend=%d\n",fb_power_off(), data->is_fboff);
+#if 1
+		if(!data->is_fboff /*fb_power_off()*/) {
+			disable_irq_wake(data->irq);
+		}
+#else
     queue_work(data->ts_workqueue, &data->resume_events_work);
-
+#endif
     return 0;
 }
 
@@ -1302,8 +1366,8 @@ Line 647: [    0.932012] ft5x_ts_sunty 4-0011: ft5x_init_irq[301], ok to request
     data->irq_enabled = true;
     ret = devm_request_irq(&data->client->dev, data->irq,
                 ft5x_ts_interrupt,
-                //IRQ_GPIO_ACTIVE_VALUE ? IRQF_TRIGGER_RISING : IRQF_TRIGGER_FALLING,
-                IRQ_GPIO_ACTIVE_VALUE ? IRQF_TRIGGER_HIGH : IRQF_TRIGGER_LOW,
+                IRQ_GPIO_ACTIVE_VALUE ? IRQF_TRIGGER_RISING : IRQF_TRIGGER_FALLING,
+                //IRQ_GPIO_ACTIVE_VALUE ? IRQF_TRIGGER_HIGH : IRQF_TRIGGER_LOW,
                 dev_name(&data->client->dev),
                 data);
     if (ret) {
@@ -1347,52 +1411,63 @@ static int ft5x_fb_notifier_callback(struct notifier_block *self,
 	struct fb_event *event = data;
     int     cmd;
 	ts = container_of(self, struct ft5x_ts_data, fb_notif);
+
 //tanlq add 190529 for system goon
-    return NOTIFY_DONE;
+    //return NOTIFY_DONE;
 
-    // 20180327,hsl,only handle FB_EVENT_BLANK
+	if (!event)
+		return NOTIFY_DONE;
+
 #ifndef NO_ELINK
-    if( !fb_eink(event->info) || action != FB_EVENT_BLANK ){
-        return NOTIFY_DONE;
-    }
+		if( !fb_eink(event->info) ){
+			return NOTIFY_DONE;
+		}
 #endif
-    cmd = *((int *)event->data);
-    printk("%s:cmd=%d,action=%ld\n", __func__, cmd, action);
-    #if 0
-	if (action == FB_EVENT_BLANK /*FB_EARLY_EVENT_BLANK*/) {
-		switch (cmd) {
-		case FB_BLANK_POWERDOWN: // 20180213,hsl.we may have other blank cmd.
-		    if(!ihid->is_suspend ){
-			    i2c_hid_suspend(&ihid->client->dev);
-			}
-			break;
-		default:
-			break;
-		}
-	} else if (action == FB_EVENT_BLANK) {
-		switch (cmd/**((int *)event->data)*/) {
-		case FB_BLANK_UNBLANK:
-			if( ihid->is_suspend ){
-			    i2c_hid_resume(&ihid->client->dev);
-			}
-			break;
-		default:
-			break;
-		}
-	}
-	#else
-	switch (cmd) {
-	case FB_BLANK_POWERDOWN: // 20180213,hsl.we may have other blank cmd.
-	    ft5x_ts_suspend(ts);
-		break;
-	case FB_BLANK_UNBLANK:
-		ft5x_ts_resume(ts);
-		break;
-	default:
-		break;
-	}
-	#endif
 
+    cmd = *((int *)event->data);
+    //dprintk(DEBUG_INIT,"%s:cmd=%d,action=%ld\n", __func__, cmd, action);
+    if(action == FB_EARLY_EVENT_BLANK) {
+		switch (cmd) {
+		case FB_BLANK_VSYNC_SUSPEND:
+			if(ts->is_enable){
+				ts->is_enable = false;
+				ft5x_set_irq_enabled(ts, ts->is_enable);
+				dprintk(DEBUG_SUSPEND,"%s:disable touch\n", __func__ );
+
+				// 20200527: 我们通过一个 work 来上报已经按下的案件。
+				// 20200615: 我们在 inputDispatch 上面做了处理，此处不能模式 TP 触摸已经弹起的事件。
+				//queue_work(ts->ts_workqueue, &ts->pen_event_work);
+			}
+			break;
+		case FB_BLANK_NORMAL:
+			if(!ts->is_enable){
+				ts->is_enable = true;
+				dprintk(DEBUG_SUSPEND,"%s:enable touch\n", __func__ );
+				ft5x_set_irq_enabled(ts, ts->is_enable);
+			}
+			break;
+		default:
+			break;
+		}
+	} else if( action == FB_EVENT_BLANK ) {
+		switch (cmd) {
+		case FB_BLANK_POWERDOWN:
+			if(!ts->is_fboff){
+				ts->is_fboff = true;
+				ft5x_ts_power_ctrl(ts, true);
+			}
+			break;
+		case FB_BLANK_UNBLANK:
+			if(ts->is_fboff) {
+				ft5x_ts_power_ctrl(ts, false);
+				ts->is_fboff = false;
+			}
+			break;
+
+		default:
+			break;
+		}
+	}
 	return NOTIFY_OK;
 }
 
@@ -1512,6 +1587,9 @@ static void ft5x_init_events (struct work_struct *work)
 
     //songsayit, here to init irq(irq enabled defautly)
     ft5x_init_irq(data);
+	data->is_enable = true;
+	data->is_fboff = false;
+	data->after_resume = false;
 
     ft5x_dbg_sys_init(data);
 
@@ -1772,7 +1850,7 @@ static int ft5x_ts_remove(struct i2c_client *client)
 }
 
 
-#if 0 //def CONFIG_PM
+#ifdef CONFIG_PM
 static int ft5x_suspend(struct device *dev)
 {
     struct ft5x_ts_data *data = dev_get_drvdata(dev);
@@ -1822,7 +1900,8 @@ static struct i2c_driver ft5x_ts_driver = {
 #if defined(CONFIG_OF)
         .of_match_table = of_match_ptr(ft5x_dt_ids),
 #endif
-#if 0 //def CONFIG_PM
+
+#ifdef CONFIG_PM
         .pm = &ft5x_pm_ops,
 #endif
     },
@@ -1831,7 +1910,21 @@ static struct i2c_driver ft5x_ts_driver = {
     .id_table   = ft5x_ts_id,
 
 };
-module_i2c_driver(ft5x_ts_driver);
+//module_i2c_driver(ft5x_ts_driver);
+static int __init ft5x_ts_init(void)
+{
+	return i2c_add_driver(&ft5x_ts_driver);
+}
+
+static void __exit ft5x_ts_exit(void)
+{
+	i2c_del_driver(&ft5x_ts_driver);
+}
+
+// 20200509: must init after wacom_i2c,cause must power on wacom first.
+late_initcall(ft5x_ts_init);
+//module_exit(ft5x_ts_init);
+
 
 MODULE_AUTHOR("<wenfs@Focaltech-systems.com>");
 MODULE_DESCRIPTION("FocalTech ft5x TouchScreen driver");

@@ -55,3 +55,5 @@ obj-$(CONFIG_BACKLIGHT_SKY81452)	+= sky81452-backlight.o
 obj-$(CONFIG_BACKLIGHT_TOSA)		+= tosa_bl.o
 obj-$(CONFIG_BACKLIGHT_TPS65217)	+= tps65217_bl.o
 obj-$(CONFIG_BACKLIGHT_WM831X)		+= wm831x_bl.o
+obj-$(CONFIG_BACKLIGHT_SGM37604A)	+= sgm37604a.o
+obj-$(CONFIG_FRONTLIGHT_FP9966)		+= htfyun_fp9966_fl.o

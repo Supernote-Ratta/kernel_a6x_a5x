@@ -277,15 +277,17 @@ static int rfkill_rk_set_power(void *data, bool blocked)
     DBG("Set blocked:%d\n", blocked);
 
     toggle = rfkill->pdata->power_toggle;
-    if (!rfkill_get_wifi_power_state(&power, &vref_ctrl_enable)) {
-        if (true == toggle && 1 == power) {
-            LOG("%s: bt shouldn't control the power, it was enabled by wifi!\n", __func__);
-            return 0;
-        }
-    } else {
-        LOG("%s: cannot get wifi power state!\n", __func__);
-        return -1;
-    }
+	if(!rfkill->pdata->only_bt){
+	    if (!rfkill_get_wifi_power_state(&power, &vref_ctrl_enable)) {
+	        if (true == toggle && 1 == power) {
+	            LOG("%s: bt shouldn't control the power, it was enabled by wifi!\n", __func__);
+	            return 0;
+	        }
+	    } else {
+	        LOG("%s: cannot get wifi power state!\n", __func__);
+	        return -1;
+	    }
+	}
 
 	if (false == blocked) { 
 
@@ -484,6 +486,12 @@ static int bluetooth_platdata_parse_dt(struct device *dev,
     } else {
         data->power_toggle = false;
     }
+	if (of_find_property(node, "only_bt", NULL)) {
+			data->only_bt = true;
+			LOG("%s: get property only_bt.\n", __func__);
+		} else {
+			data->only_bt = false;
+		}
 
     gpio = of_get_named_gpio_flags(node, "uart_rts_gpios", 0, &flags);
     if (gpio_is_valid(gpio)) {

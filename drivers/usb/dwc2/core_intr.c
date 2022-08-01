@@ -37,6 +37,7 @@
 /*
  * This file contains the common interrupt handlers
  */
+#define DEBUG
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -126,7 +127,10 @@ static void dwc2_handle_otg_intr(struct dwc2_hsotg *hsotg)
 		gotgctl = dwc2_readl(hsotg->regs + GOTGCTL);
 
 		if (dwc2_is_device_mode(hsotg))
+		{
+			printk("disconnect device\n");
 			dwc2_hsotg_disconnect(hsotg);
+		}
 
 		if (hsotg->op_state == OTG_STATE_B_HOST) {
 			hsotg->op_state = OTG_STATE_B_PERIPHERAL;
@@ -293,7 +297,12 @@ static void dwc2_handle_conn_id_status_change_intr(struct dwc2_hsotg *hsotg)
 	 */
 	if (hsotg->wq_otg) {
 		spin_unlock(&hsotg->lock);
+#ifdef CONFIG_LTE
+        queue_delayed_work(hsotg->wq_otg, &hsotg->wf_otg,
+			   msecs_to_jiffies(250));
+#else
 		queue_work(hsotg->wq_otg, &hsotg->wf_otg);
+#endif
 		spin_lock(&hsotg->lock);
 	}
 }
@@ -311,6 +320,7 @@ static void dwc2_handle_conn_id_status_change_intr(struct dwc2_hsotg *hsotg)
  */
 static void dwc2_handle_session_req_intr(struct dwc2_hsotg *hsotg)
 {
+	u32 dctl;
 	int ret;
 
 	/* Clear interrupt */
@@ -332,6 +342,13 @@ static void dwc2_handle_session_req_intr(struct dwc2_hsotg *hsotg)
 		 * established
 		 */
 		dwc2_hsotg_disconnect(hsotg);
+
+		hsotg->rst_completed = 0;
+
+		dctl = dwc2_readl(hsotg->regs + DCTL);
+		if (!(dctl & DCTL_SFTDISCON))
+			mod_timer(&hsotg->rst_complete_timer, jiffies +
+				  msecs_to_jiffies(DWC2_WAIT_RESET_TIMEOUT));
 	}
 }
 
@@ -425,6 +442,8 @@ static void dwc2_handle_disconnect_intr(struct dwc2_hsotg *hsotg)
  *
  * When power management is enabled the core will be put in low power mode.
  */
+ /* define gadget.c */
+extern void dwc2_disable_diepctl0(struct dwc2_hsotg *hsotg); //tanlq 210527 from rk usb cc
 static void dwc2_handle_usb_suspend_intr(struct dwc2_hsotg *hsotg)
 {
 	u32 dsts;
@@ -434,6 +453,8 @@ static void dwc2_handle_usb_suspend_intr(struct dwc2_hsotg *hsotg)
 	dwc2_writel(GINTSTS_USBSUSP, hsotg->regs + GINTSTS);
 
 	dev_dbg(hsotg->dev, "USB SUSPEND\n");
+	/* workaround the ep no auto clear EPENA bit */ 
+		dwc2_disable_diepctl0(hsotg); //tanlq 210527 from rk usb cc
 
 	if (dwc2_is_device_mode(hsotg)) {
 		/*

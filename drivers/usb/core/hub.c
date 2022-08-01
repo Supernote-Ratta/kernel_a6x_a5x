@@ -35,6 +35,9 @@
 
 #define USB_VENDOR_GENESYS_LOGIC		0x05e3
 #define HUB_QUIRK_CHECK_PORT_AUTOSUSPEND	0x01
+/* changed tower: for 4G or not 4G modem */
+#define GET_PORT_STATUS_CNT				3 // 10
+/* change end */
 
 /* Protect struct usb_device->state and ->children members
  * Note: Both are also protected by ->dev.sem, except that ->state can
@@ -1059,11 +1062,41 @@ static void hub_activate(struct usb_hub *hub, enum hub_activation_type type)
 		struct usb_port *port_dev = hub->ports[port1 - 1];
 		struct usb_device *udev = port_dev->child;
 		u16 portstatus, portchange;
+		/* changed tower: for 4G or not 4G modem */
+#if defined(CONFIG_LTE)
+		int count;
+#endif
 
 		portstatus = portchange = 0;
+#if !defined(CONFIG_LTE)
 		status = hub_port_status(hub, port1, &portstatus, &portchange);
 		if (status)
 			goto abort;
+#else
+		for (count = 0; count < GET_PORT_STATUS_CNT; count++) {
+			status = hub_port_status(hub, port1, &portstatus, &portchange);
+			dev_info(&port_dev->dev, "%s: line = %d, portstatus = 0x%x, portchange = 0x%x\n",
+				 __func__, __LINE__, portstatus, portchange);
+			if (status)
+				goto abort;
+
+			// 20210809: found first check, portchange = 0. but next check, OK.
+			if (!(portchange & USB_PORT_STAT_C_CONNECTION) && count > 0) {
+				dev_info(&port_dev->dev,
+					 "%s: the port status has not changed, so no loop is required,count=%d\n",
+					 __func__, count);
+				break;
+			} else if (portstatus & USB_PORT_STAT_CONNECTION) {
+				dev_info(&port_dev->dev,
+					 "%s: Needed %d loops to get port status\n",
+					 __func__, count + 1);
+				break;
+			} else {
+				msleep(HUB_DEBOUNCE_STABLE);
+			}
+		}
+#endif
+		/* change end */
 
 		if (udev || (portstatus & USB_PORT_STAT_CONNECTION))
 			dev_dbg(&port_dev->dev, "status %04x change %04x\n",

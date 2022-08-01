@@ -1382,6 +1382,13 @@ static void dwc2_hsotg_complete_setup(struct usb_ep *ep,
 		return;
 	}
 
+	// 20210706: 做USB 插拔实验会概率性死机，看LOG是此处 hsotg 是null导致 spin_lock
+	// 访问空指针： Unable to handle kernel NULL pointer dereference at virtual address 00000090
+	if (!hsotg ) { // IS_ERR_OR_NULL(hsotg) 
+		dev_dbg(hsotg->dev, "%s: failed -- dwc2_hsotg=%p\n", __func__, hsotg);
+		return;
+	}
+
 	spin_lock(&hsotg->lock);
 	if (req->actual == 0)
 		dwc2_hsotg_enqueue_setup(hsotg);
@@ -2448,12 +2455,20 @@ static void kill_all_requests(struct dwc2_hsotg *hsotg,
 void dwc2_hsotg_disconnect(struct dwc2_hsotg *hsotg)
 {
 	unsigned ep;
+	/* changed tower: for 4G or not 4G modem */
+	void __iomem *regs = hsotg->regs;
 
+	printk("DIEPCTL0=0x%08x,  DOEPCTL0=0x%08x\n", dwc2_readl(regs + DIEPCTL(0)),dwc2_readl(regs + DOEPCTL(0)));
+	/* change end */
 	if (!hsotg->connected)
 		return;
 
+
+	del_timer(&hsotg->rst_complete_timer);
+
 	hsotg->connected = 0;
 	hsotg->test_mode = 0;
+	hsotg->rst_completed = 0;
 
 	for (ep = 0; ep < hsotg->num_of_eps; ep++) {
 		if (hsotg->eps_in[ep])
@@ -2541,8 +2556,12 @@ void dwc2_hsotg_core_init_disconnected(struct dwc2_hsotg *hsotg,
 
 	dwc2_hsotg_init_fifo(hsotg);
 
+	/* changed tower: for 4G or not 4G modem */
+#if !defined(CONFIG_LTE)
 	if (!is_usb_reset)
 		__orr32(hsotg->regs + DCTL, DCTL_SFTDISCON);
+#endif
+	/* change end */
 
 	dwc2_writel(DCFG_EPMISCNT(1) | DCFG_DEVSPD_HS,  hsotg->regs + DCFG);
 
@@ -2644,8 +2663,12 @@ void dwc2_hsotg_core_init_disconnected(struct dwc2_hsotg *hsotg,
 
 	/* clear global NAKs */
 	val = DCTL_CGOUTNAK | DCTL_CGNPINNAK;
+	/* changed tower: for 4G or not 4G modem */
+#if !defined(CONFIG_LTE)
 	if (!is_usb_reset)
 		val |= DCTL_SFTDISCON;
+#endif
+	/* change end */
 	__orr32(hsotg->regs + DCTL, val);
 
 	/* must be at-least 3ms to allow bus to see disconnect */
@@ -2663,13 +2686,60 @@ void dwc2_hsotg_core_init_disconnected(struct dwc2_hsotg *hsotg,
 static void dwc2_hsotg_core_disconnect(struct dwc2_hsotg *hsotg)
 {
 	/* set the soft-disconnect bit */
+	/* changed tower: for 4G or not 4G modem */
+#if !defined(CONFIG_LTE)
 	__orr32(hsotg->regs + DCTL, DCTL_SFTDISCON);
+#else
+	//__orr32(hsotg->regs + DCTL, DCTL_SFTDISCON);  //tanlq 210527 from rk usb cc
+#endif
+	/* change end */
 }
 
 void dwc2_hsotg_core_connect(struct dwc2_hsotg *hsotg)
 {
 	/* remove the soft-disconnect and let's go */
 	__bic32(hsotg->regs + DCTL, DCTL_SFTDISCON);
+}
+//tanlq 210527 from rk usb cc
+static int dwc2_hsotg_wait_bit_set(struct dwc2_hsotg *hs_otg, u32 reg,
+							u32 bit, u32 timeout);
+void dwc2_disable_diepctl0(struct dwc2_hsotg *hsotg)
+{
+	u32 diepctl0, diepctl1;
+	diepctl0 = dwc2_readl(hsotg->regs + DIEPCTL0);
+	diepctl1 = dwc2_readl(hsotg->regs + DOEPCTL0);
+	printk("reg diepctl0 = %x \n",diepctl0);
+	printk("reg diepctl1 = %x \n",diepctl1);
+
+#if 0
+	if (diepctl0 & DXEPCTL_EPENA || diepctl0 & DXEPCTL_NAKSTS)
+	{
+		diepctl0 |= DXEPCTL_EPDIS;
+
+		/* Disable ep0 in */
+		dwc2_writel(diepctl0, hsotg->regs + DIEPCTL0);
+
+		/* Wait for global nak to take effect */
+		if (dwc2_hsotg_wait_bit_set(hsotg, GINTSTS,
+					GINTSTS_GOUTNAKEFF, 1000))
+			dev_warn(hsotg->dev, "%s: timeout GINTSTS.GOUTNAKEFF\n",
+					__func__);
+
+		/* Clear EPDISBLD interrupt */
+		__orr32(hsotg->regs + DIEPINT(0), DXEPINT_EPDISBLD);
+
+		diepctl0 = dwc2_readl(hsotg->regs + DIEPCTL0);
+		printk("reg diepctl0 = %x \n",diepctl0);
+
+		diepctl0  &= ~DXEPCTL_EPENA;
+		diepctl0  &= ~DXEPCTL_USBACTEP;
+		diepctl0  |= DXEPCTL_SNAK;
+
+		dwc2_writel(diepctl0, hsotg->regs + DIEPCTL0);
+		diepctl0 = dwc2_readl(hsotg->regs + DIEPCTL0);
+		printk("reg diepctl0 = %x \n",diepctl0);
+	}
+#endif
 }
 
 /**
@@ -2793,6 +2863,10 @@ irq_retry:
 		u32 usb_status = dwc2_readl(hsotg->regs + GOTGCTL);
 		u32 connected = hsotg->connected;
 
+		hsotg->rst_completed = 1;
+		/* Can't del_timer_sync in interrupt */
+		del_timer(&hsotg->rst_complete_timer);
+
 		dev_dbg(hsotg->dev, "%s: USBRst\n", __func__);
 		dev_dbg(hsotg->dev, "GNPTXSTS=%08x\n",
 			dwc2_readl(hsotg->regs + GNPTXSTS));
@@ -2802,8 +2876,15 @@ irq_retry:
 		/* Report disconnection if it is not already done. */
 		dwc2_hsotg_disconnect(hsotg);
 
+		/* changed tower: for 4G or not 4G modem */
+#if !defined(CONFIG_LTE)
 		if (usb_status & GOTGCTL_BSESVLD && connected)
 			dwc2_hsotg_core_init_disconnected(hsotg, true);
+#else
+		printk("usb_staus = %d connected = %d\n",usb_status, connected);
+		dwc2_hsotg_core_init_disconnected(hsotg, true);
+#endif
+		/* change end */
 	}
 
 	if (gintsts & GINTSTS_ENUMDONE) {
@@ -2933,6 +3014,95 @@ irq_retry:
 	spin_unlock(&hsotg->lock);
 
 	return IRQ_HANDLED;
+}
+
+static int dwc2_hsotg_wait_bit_set(struct dwc2_hsotg *hs_otg, u32 reg,
+				   u32 bit, u32 timeout)
+{
+	u32 i;
+
+	for (i = 0; i < timeout; i++) {
+		if (dwc2_readl(hs_otg->regs + reg) & bit)
+			return 0;
+		udelay(1);
+	}
+
+	return -ETIMEDOUT;
+}
+
+static void dwc2_hsotg_ep_stop_xfr(struct dwc2_hsotg *hsotg,
+				   struct dwc2_hsotg_ep *hs_ep)
+{
+	u32 epctrl_reg;
+	u32 epint_reg;
+
+	epctrl_reg = hs_ep->dir_in ? DIEPCTL(hs_ep->index) :
+		DOEPCTL(hs_ep->index);
+	epint_reg = hs_ep->dir_in ? DIEPINT(hs_ep->index) :
+		DOEPINT(hs_ep->index);
+
+	dev_dbg(hsotg->dev, "%s: stopping transfer on %s\n", __func__,
+		hs_ep->name);
+
+	if (hs_ep->dir_in) {
+		if (hsotg->dedicated_fifos || hs_ep->periodic) {
+			__orr32(hsotg->regs + epctrl_reg, DXEPCTL_SNAK);
+			/* Wait for Nak effect */
+			if (dwc2_hsotg_wait_bit_set(hsotg, epint_reg,
+						    DXEPINT_INEPNAKEFF, 100))
+				dev_warn(hsotg->dev,
+					 "%s: timeout DIEPINT.NAKEFF\n",
+					 __func__);
+		} else {
+			__orr32(hsotg->regs + DCTL, DCTL_SGNPINNAK);
+			/* Wait for Nak effect */
+			if (dwc2_hsotg_wait_bit_set(hsotg, GINTSTS,
+						    GINTSTS_GINNAKEFF, 100))
+				dev_warn(hsotg->dev,
+					 "%s: timeout GINTSTS.GINNAKEFF\n",
+					 __func__);
+		}
+	} else {
+		if (!(dwc2_readl(hsotg->regs + GINTSTS) & GINTSTS_GOUTNAKEFF))
+			__orr32(hsotg->regs + DCTL, DCTL_SGOUTNAK);
+
+		/* Wait for global nak to take effect */
+		if (dwc2_hsotg_wait_bit_set(hsotg, GINTSTS,
+					    GINTSTS_GOUTNAKEFF, 100))
+			dev_warn(hsotg->dev, "%s: timeout GINTSTS.GOUTNAKEFF\n",
+				 __func__);
+	}
+
+	/* Disable ep */
+	__orr32(hsotg->regs + epctrl_reg, DXEPCTL_EPDIS | DXEPCTL_SNAK);
+
+	/* Wait for ep to be disabled */
+	if (dwc2_hsotg_wait_bit_set(hsotg, epint_reg, DXEPINT_EPDISBLD, 100))
+		dev_warn(hsotg->dev,
+			 "%s: timeout DOEPCTL.EPDisable\n", __func__);
+
+	/* Clear EPDISBLD interrupt */
+	__orr32(hsotg->regs + epint_reg, DXEPINT_EPDISBLD);
+
+	if (hs_ep->dir_in) {
+		unsigned short fifo_index;
+
+		if (hsotg->dedicated_fifos || hs_ep->periodic)
+			fifo_index = hs_ep->fifo_index;
+		else
+			fifo_index = 0;
+
+		/* Flush TX FIFO */
+		dwc2_flush_tx_fifo(hsotg, fifo_index);
+
+		/* Clear Global In NP NAK in Shared FIFO for non periodic ep */
+		if (!hsotg->dedicated_fifos && !hs_ep->periodic)
+			__orr32(hsotg->regs + DCTL, DCTL_CGNPINNAK);
+
+	} else {
+		/* Remove global NAKs */
+		__orr32(hsotg->regs + DCTL, DCTL_CGOUTNAK);
+	}
 }
 
 /**
@@ -3125,6 +3295,14 @@ static int dwc2_hsotg_ep_disable(struct usb_ep *ep)
 	spin_lock_irqsave(&hsotg->lock, flags);
 
 	ctrl = dwc2_readl(hsotg->regs + epctrl_reg);
+
+	/* changed tower: for 4G or not 4G modem */
+#if defined(CONFIG_LTE)
+	if (ctrl & DXEPCTL_EPENA)
+		dwc2_hsotg_ep_stop_xfr(hsotg, hs_ep);
+#endif
+	/* change end */
+
 	ctrl &= ~DXEPCTL_EPENA;
 	ctrl &= ~DXEPCTL_USBACTEP;
 	ctrl |= DXEPCTL_SNAK;
@@ -3161,77 +3339,6 @@ static bool on_list(struct dwc2_hsotg_ep *ep, struct dwc2_hsotg_req *test)
 	}
 
 	return false;
-}
-
-static int dwc2_hsotg_wait_bit_set(struct dwc2_hsotg *hs_otg, u32 reg,
-							u32 bit, u32 timeout)
-{
-	u32 i;
-
-	for (i = 0; i < timeout; i++) {
-		if (dwc2_readl(hs_otg->regs + reg) & bit)
-			return 0;
-		udelay(1);
-	}
-
-	return -ETIMEDOUT;
-}
-
-static void dwc2_hsotg_ep_stop_xfr(struct dwc2_hsotg *hsotg,
-						struct dwc2_hsotg_ep *hs_ep)
-{
-	u32 epctrl_reg;
-	u32 epint_reg;
-
-	epctrl_reg = hs_ep->dir_in ? DIEPCTL(hs_ep->index) :
-		DOEPCTL(hs_ep->index);
-	epint_reg = hs_ep->dir_in ? DIEPINT(hs_ep->index) :
-		DOEPINT(hs_ep->index);
-
-	dev_dbg(hsotg->dev, "%s: stopping transfer on %s\n", __func__,
-			hs_ep->name);
-	if (hs_ep->dir_in) {
-		__orr32(hsotg->regs + epctrl_reg, DXEPCTL_SNAK);
-		/* Wait for Nak effect */
-		if (dwc2_hsotg_wait_bit_set(hsotg, epint_reg,
-						DXEPINT_INEPNAKEFF, 100))
-			dev_warn(hsotg->dev,
-				"%s: timeout DIEPINT.NAKEFF\n", __func__);
-	} else {
-		if (!(dwc2_readl(hsotg->regs + GINTSTS) & GINTSTS_GOUTNAKEFF))
-			__orr32(hsotg->regs + DCTL, DCTL_SGOUTNAK);
-
-		/* Wait for global nak to take effect */
-		if (dwc2_hsotg_wait_bit_set(hsotg, GINTSTS,
-						GINTSTS_GOUTNAKEFF, 100))
-			dev_warn(hsotg->dev,
-				"%s: timeout GINTSTS.GOUTNAKEFF\n", __func__);
-	}
-
-	/* Disable ep */
-	__orr32(hsotg->regs + epctrl_reg, DXEPCTL_EPDIS | DXEPCTL_SNAK);
-
-	/* Wait for ep to be disabled */
-	if (dwc2_hsotg_wait_bit_set(hsotg, epint_reg, DXEPINT_EPDISBLD, 100))
-		dev_warn(hsotg->dev,
-			"%s: timeout DOEPCTL.EPDisable\n", __func__);
-
-	if (hs_ep->dir_in) {
-		if (hsotg->dedicated_fifos) {
-			dwc2_writel(GRSTCTL_TXFNUM(hs_ep->fifo_index) |
-				GRSTCTL_TXFFLSH, hsotg->regs + GRSTCTL);
-			/* Wait for fifo flush */
-			if (dwc2_hsotg_wait_bit_set(hsotg, GRSTCTL,
-							GRSTCTL_TXFFLSH, 100))
-				dev_warn(hsotg->dev,
-					"%s: timeout flushing fifos\n",
-					__func__);
-		}
-		/* TODO: Flush shared tx fifo */
-	} else {
-		/* Remove global NAKs */
-		__bic32(hsotg->regs + DCTL, DCTL_SGOUTNAK);
-	}
 }
 
 /**
@@ -3394,8 +3501,12 @@ static void dwc2_hsotg_init(struct dwc2_hsotg *hsotg)
 
 	dwc2_writel(0, hsotg->regs + DAINTMSK);
 
+	/* changed tower: for 4G or not 4G modem */
+#if !defined(CONFIG_LTE)
 	/* Be in disconnected state until gadget is registered */
 	__orr32(hsotg->regs + DCTL, DCTL_SFTDISCON);
+#endif
+	/* change end */
 
 	/* setup fifos */
 
@@ -3521,8 +3632,15 @@ static int dwc2_hsotg_udc_stop(struct usb_gadget *gadget)
 	if (!hsotg)
 		return -ENODEV;
 
+	printk("%s-->%d\n", __func__, __LINE__);
 	/* all endpoints should be shutdown */
+	/* changed tower: for 4G or not 4G mode */
+#if !defined(CONFIG_LTE)
 	for (ep = 1; ep < hsotg->num_of_eps; ep++) {
+#else
+	for (ep = 0; ep < hsotg->num_of_eps; ep++) {
+#endif
+	/* change end */
 		if (hsotg->eps_in[ep])
 			dwc2_hsotg_ep_disable(&hsotg->eps_in[ep]->ep);
 		if (hsotg->eps_out[ep])
@@ -3787,6 +3905,52 @@ static int dwc2_hsotg_hw_cfg(struct dwc2_hsotg *hsotg)
 }
 
 /**
+ * dwc2_wait_reset_watchdog - Watchdog timer function for a reset on the USB
+ * @param: The device state
+ *
+ * Watchdog timer function for when the dwc2 controller fails to detect
+ * a reset on USB bus. In this case, we assume the dwc2 controller is broken,
+ * the host does not see that the device is connected, and the device does
+ * not receive reset signal on the USB. So we have to do soft disconnect
+ * and soft connect, and try to generate a device connect event to the USB
+ * host.
+ */
+static void dwc2_wait_reset_watchdog(unsigned long data)
+{
+	struct dwc2_hsotg *hsotg = (struct dwc2_hsotg *)data;
+	unsigned long flags;
+	u32 dctl;
+	
+	dev_err(hsotg->dev, "enter %s\n", __func__);
+	spin_lock_irqsave(&hsotg->lock, flags);
+
+	if (!hsotg->rst_completed) {
+		dctl = dwc2_readl(hsotg->regs + DCTL);
+
+		/*
+		 * According to the dwc2 controller databook,
+		 * Table 5-55 lists the minimum duration under various
+		 * conditions for which the Soft Disconnect bit must be
+		 * set for the USB host to detect a device disconnect.
+		 * We set minimum duration to 3 microseconds.
+		 */
+		if (!(dctl & DCTL_SFTDISCON)) {
+			/* changed tower: for 4G or not 4G modem */
+#if !defined(CONFIG_LTE)
+			dwc2_hsotg_core_disconnect(hsotg);
+#else
+			__orr32(hsotg->regs + DCTL, DCTL_SFTDISCON);
+#endif
+			/* change end */
+			udelay(3);
+			dwc2_hsotg_core_connect(hsotg);
+		}
+	}
+
+	spin_unlock_irqrestore(&hsotg->lock, flags);
+}
+
+/**
  * dwc2_hsotg_dump - dump state of the udc
  * @param: The device state
  */
@@ -3983,6 +4147,9 @@ int dwc2_gadget_init(struct dwc2_hsotg *hsotg, int irq)
 								epnum, 0);
 	}
 
+	setup_timer(&hsotg->rst_complete_timer, dwc2_wait_reset_watchdog,
+		    (unsigned long)hsotg);
+
 	ret = usb_add_gadget_udc(dev, &hsotg->gadget);
 	if (ret)
 		return ret;
@@ -3999,7 +4166,7 @@ int dwc2_gadget_init(struct dwc2_hsotg *hsotg, int irq)
 int dwc2_hsotg_remove(struct dwc2_hsotg *hsotg)
 {
 	usb_del_gadget_udc(&hsotg->gadget);
-
+    del_timer_sync(&hsotg->rst_complete_timer);
 	return 0;
 }
 

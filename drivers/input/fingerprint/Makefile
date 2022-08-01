@@ -1,0 +1,3 @@
+#obj-$(CONFIG_GOODIX_FINGERPRINT) += gf_spi.o platform.o netlink.o
+obj-$(CONFIG_GOODIX_FINGERPRINT) += gf3626/
+obj-$(CONFIG_FOCALTECH_FINGERPRINT) += ft9366/

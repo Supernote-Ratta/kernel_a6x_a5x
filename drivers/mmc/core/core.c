@@ -70,6 +70,7 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(mmc_blk_rw_end);
  */
 bool use_spi_crc = 1;
 module_param(use_spi_crc, bool, 0);
+extern int lte_wakeup(int wakeup);
 
 static int mmc_schedule_delayed_work(struct delayed_work *work,
 				     unsigned long delay)
@@ -1914,6 +1915,12 @@ static void _mmc_detect_change(struct mmc_host *host, unsigned long delay,
 
 	host->detect_change = 1;
 	mmc_schedule_delayed_work(&host->detect, delay);
+
+#ifdef CONFIG_LTE_RM310	
+    // 210621 tanlq add .Powerdown lte when there is no sim card.
+    //if(cd_irq)
+	//	lte_wakeup(0);
+#endif 		
 }
 
 /**
@@ -2669,6 +2676,19 @@ void mmc_rescan(struct work_struct *work)
 	 * release the lock here.
 	 */
 	mmc_bus_put(host);
+
+#ifdef CONFIG_LTE_RM310	
+    // 210621 tanlq add .PowerOn lte when there is no sim card.
+    // 20210805: 暂时屏蔽此处关闭4G模块的功能，原因：1. 只要卡槽在，卡检测就在，所以实际意义
+    // 不大；2. 在某种情况下，此处调用 lte_wakeup(1) 可能会导致系统无法进入休眠。流程：PM suspend
+    // --> lte_pm_prepare --> lte_wakeup(0)(断开4G USB) --> 退出休眠 -->mmc rescan --> lte_wakeup(1)
+    // --> 重新连上4G   USB -->pm suspend --> 断开4G USB，进入了循环。也就是说LTE在休眠的时候要先断开USB,
+    // 所以第一次休眠会返回 -EBUSY; 然后退出休眠。但是此时 mmc rescan 又把 4G USB 连接上了。
+    // 这个问题等到后面处理好SIM 卡是否存在的判断之后再处理。
+	//if(host->ops->get_cd(host) != 0){ //open lte
+	//	lte_wakeup(1);
+	//}
+#endif 
 
 	if (!(host->caps & MMC_CAP_NONREMOVABLE) && host->ops->get_cd &&
 			host->ops->get_cd(host) == 0) {

@@ -548,6 +548,7 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 	cec = atomic_inc_return(&combined_event_count);
 
 	trace_wakeup_source_activate(ws->name, cec);
+	//printk("%s: %s--ces=%d\n", __func__, ws->name, cec);
 }
 
 /**
@@ -809,7 +810,7 @@ void pm_wakeup_event(struct device *dev, unsigned int msec)
 }
 EXPORT_SYMBOL_GPL(pm_wakeup_event);
 
-void pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
+bool pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
 {
 	struct wakeup_source *ws, *last_active_ws = NULL;
 	int len = 0;
@@ -837,6 +838,7 @@ void pm_get_active_wakeup_sources(char *pending_wakeup_source, size_t max)
 				last_active_ws->name);
 	}
 	rcu_read_unlock();
+	return active;
 }
 EXPORT_SYMBOL_GPL(pm_get_active_wakeup_sources);
 
@@ -915,6 +917,7 @@ void pm_system_irq_wakeup(unsigned int irq_number)
 	if (pm_wakeup_irq == 0) {
 		pm_wakeup_irq = irq_number;
 		pm_system_wakeup();
+		pr_info("PM: Wakeup irq - %u\n", irq_number);
 	}
 }
 

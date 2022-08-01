@@ -348,6 +348,11 @@ int generic_handle_irq(unsigned int irq)
 
 	if (!desc)
 		return -EINVAL;
+
+	// 20191227,hsl add for trace suspend-irq( wakeup by irq).
+	//if( irq > 49 && irq < 170 && irq != 107) {	//gpio irq.
+	//	printk("%s: irq=%d\n", __func__, irq);
+	//}
 	generic_handle_irq_desc(desc);
 	return 0;
 }

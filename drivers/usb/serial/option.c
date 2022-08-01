@@ -553,7 +553,10 @@ static void option_instat_callback(struct urb *urb);
 #define WETELECOM_PRODUCT_6802			0x6802
 #define WETELECOM_PRODUCT_WMD300		0x6803
 
-
+#define MEIG_VENDOR_ID 0x2dee
+#define MEIG_PRODUCT_SLM320_1 0x4d41
+#define MEIG_PRODUCT_SLM320_2 0x4d42
+#define MEIG_PRODUCT_SLM320_3 0x4d43
 /* Device flags */
 
 /* Interface does not support modem-control requests */
@@ -564,6 +567,24 @@ static void option_instat_callback(struct urb *urb);
 
 
 static const struct usb_device_id option_ids[] = {
+	{ USB_DEVICE(0x1286, 0x4e3c) },
+
+    { USB_DEVICE(0x05C6, 0x9090) }, /* Quectel UC15 */
+    { USB_DEVICE(0x05C6, 0x9003) }, /* Quectel UC20 */
+    { USB_DEVICE(0x2C7C, 0x0125) }, /* Quectel EC25 */
+    { USB_DEVICE(0x2C7C, 0x0121) }, /* Quectel EC21 */
+    { USB_DEVICE(0x05C6, 0x9215) }, /* Quectel EC20 */
+    { USB_DEVICE(0x2C7C, 0x0191) }, /* Quectel EG91 */
+    { USB_DEVICE(0x2C7C, 0x0195) }, /* Quectel EG95 */
+    { USB_DEVICE(0x2C7C, 0x0306) }, /* Quectel EG06/EP06/EM06 */
+    { USB_DEVICE(0x2C7C, 0x0296) }, /* Quectel BG96 */
+    { USB_DEVICE(0x2C7C, 0x0435) }, /* Quectel AG35 */
+#if 1 //Added by Quectel
+	{ USB_DEVICE(0x2C7C, 0x6026) }, /* Quectel EC200T */
+	{ USB_DEVICE(0x2C7C, 0x6000) }, /* Quectel EC200T */
+	{ USB_DEVICE(0x2C7C, 0x6002) }, /* Quectel EC200S */
+	{ USB_DEVICE_AND_INTERFACE_INFO(0x2c7c, 0x0901, 0xff, 0x00, 0x00) }, /* Quectel EC200U */
+#endif
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_COLT) },
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA) },
 	{ USB_DEVICE(OPTION_VENDOR_ID, OPTION_PRODUCT_RICOLA_LIGHT) },
@@ -1885,6 +1906,9 @@ static const struct usb_device_id option_ids[] = {
 	{ USB_DEVICE(YUGA_VENDOR_ID, YUGA_PRODUCT_CWU581) },
 	{ USB_DEVICE(YUGA_VENDOR_ID, YUGA_PRODUCT_CWU582) },
 	{ USB_DEVICE(YUGA_VENDOR_ID, YUGA_PRODUCT_CWU583) },
+	{ USB_DEVICE(MEIG_VENDOR_ID, MEIG_PRODUCT_SLM320_1) },
+	{ USB_DEVICE(MEIG_VENDOR_ID, MEIG_PRODUCT_SLM320_2) },
+	{ USB_DEVICE(MEIG_VENDOR_ID, MEIG_PRODUCT_SLM320_3) },
 	{ USB_DEVICE_AND_INTERFACE_INFO(VIETTEL_VENDOR_ID, VIETTEL_PRODUCT_VT1000, 0xff, 0xff, 0xff) },
 	{ USB_DEVICE_AND_INTERFACE_INFO(ZD_VENDOR_ID, ZD_PRODUCT_7000, 0xff, 0xff, 0xff) },
 	{ USB_DEVICE(LG_VENDOR_ID, LG_PRODUCT_L02C) }, /* docomo L-02C modem */
@@ -1972,6 +1996,9 @@ static struct usb_serial_driver option_1port_device = {
 #ifdef CONFIG_PM
 	.suspend           = usb_wwan_suspend,
 	.resume            = usb_wwan_resume,
+#if 1 //Added by Quectel
+    .reset_resume = usb_wwan_resume,
+#endif
 #endif
 };
 
@@ -1981,6 +2008,14 @@ static struct usb_serial_driver * const serial_drivers[] = {
 
 module_usb_serial_driver(serial_drivers, option_ids);
 
+
+// 20210701,hsl add to detect 4G-USB device.
+//static int 	usb_serial_num = 0;
+void __weak option_dev_change(bool add) 
+{
+
+}
+
 static int option_probe(struct usb_serial *serial,
 			const struct usb_device_id *id)
 {
@@ -1988,6 +2023,7 @@ static int option_probe(struct usb_serial *serial,
 				&serial->interface->cur_altsetting->desc;
 	struct usb_device_descriptor *dev_desc = &serial->dev->descriptor;
 	unsigned long device_flags = id->driver_info;
+	__u16 idProduct;
 
 	/* Never bind to the CD-Rom emulation interface	*/
 	if (iface_desc->bInterfaceClass == 0x08)
@@ -2009,6 +2045,45 @@ static int option_probe(struct usb_serial *serial,
 	    iface_desc->bInterfaceClass != USB_CLASS_CDC_DATA)
 		return -ENODEV;
 
+	if (dev_desc->idVendor == cpu_to_le16(0x1286) &&
+	    dev_desc->idProduct == cpu_to_le16(0x4e3c) &&
+	    iface_desc->bInterfaceNumber <= 1)
+		return -ENODEV;
+#if 1 //Added by Quectel
+    //Quectel UC20's interface 4 can be used as USB network device
+    if (serial->dev->descriptor.idVendor == cpu_to_le16(0x05C6) &&
+        serial->dev->descriptor.idProduct == cpu_to_le16(0x9003)
+        && serial->interface->cur_altsetting->desc.bInterfaceNumber >= 4)
+            return -ENODEV;
+        //Quectel EC20's interface 4 can be used as USB network device
+        if (serial->dev->descriptor.idVendor == cpu_to_le16(0x05C6) &&
+        serial->dev->descriptor.idProduct == cpu_to_le16(0x9215)
+        && serial->interface->cur_altsetting->desc.bInterfaceNumber >= 4)
+            return -ENODEV;
+        //Quectel EC25&EC21&EG91&EG95&EG06&EP06&EM06&BG96/AG35's interface 4 can be used as USB network device
+        if (serial->dev->descriptor.idVendor == cpu_to_le16(0x2C7C)&&
+        serial->dev->descriptor.idProduct != cpu_to_le16(0x0901)
+        && serial->interface->cur_altsetting->desc.bInterfaceNumber >= 4){
+        printk("====tanlq option probe error aaaaaaa \n");
+            return -ENODEV;
+        	}
+        if (serial->dev->descriptor.idVendor == cpu_to_le16(0x2C7C)) {
+		idProduct = le16_to_cpu(serial->dev->descriptor.idProduct);
+    	//Quectel EC200T's interface 0 can be used as USB Network device (ecm, rndis)
+    	        printk("====tanlq option probe error idProduct:0x%x \n",idProduct);
+    	if (serial->interface->cur_altsetting->desc.bInterfaceClass != 0xFF){
+			    	        printk("====tanlq option probe error bbbbb \n");
+	        return -ENODEV;
+    		}
+            	}
+#endif
+
+	
+	//printk("%s[%d]: vendor=0x%x,product=0x%x,serial=%p\n", __func__, 
+	//	usb_serial_num, dev_desc->idVendor, dev_desc->idProduct, serial);
+	// usb_serial_num++;
+	option_dev_change(true);
+	
 	/* Store the device flags so we can use them during attach. */
 	usb_set_serial_data(serial, (void *)device_flags);
 
@@ -2037,6 +2112,7 @@ static int option_attach(struct usb_serial *serial)
 
 	usb_set_serial_data(serial, data);
 
+	//printk("%s: serial=%p,data=%p\n", __func__, serial, data);
 	return 0;
 }
 
@@ -2044,6 +2120,9 @@ static void option_release(struct usb_serial *serial)
 {
 	struct usb_wwan_intf_private *intfdata = usb_get_serial_data(serial);
 
+	//usb_serial_num--;
+	option_dev_change(false);
+	//printk("%s[%d]: serial=%p,data=%p\n", __func__, usb_serial_num, serial, intfdata);
 	kfree(intfdata);
 }
 

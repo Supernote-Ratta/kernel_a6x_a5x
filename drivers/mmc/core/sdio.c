@@ -1002,7 +1002,8 @@ static int mmc_sdio_resume(struct mmc_host *host)
 
 	mmc_release_host(host);
 
-	host->pm_flags &= ~MMC_PM_KEEP_POWER;
+	// 20191204,hsl why rm MMC_PM_KEEP_POWER? we need to keep it for fast wakup.
+	//host->pm_flags &= ~MMC_PM_KEEP_POWER;
 	return err;
 }
 
@@ -1093,6 +1094,7 @@ static const struct mmc_bus_ops mmc_sdio_ops = {
 	.reset = mmc_sdio_reset,
 };
 
+int cis_chipvendor = 0;	//add by May
 
 /*
  * Starting point for SDIO card init.
@@ -1102,6 +1104,7 @@ int mmc_attach_sdio(struct mmc_host *host)
 	int err, i, funcs;
 	u32 ocr, rocr;
 	struct mmc_card *card;
+	struct sdio_func_tuple *tpl;  //add by May
 
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
@@ -1203,6 +1206,8 @@ int mmc_attach_sdio(struct mmc_host *host)
 	if (err)
 		goto remove_added;
 
+	//host->pm_flags |= MMC_PM_KEEP_POWER;    // 20191204,hsl add.
+
 	/*
 	 * ...then the SDIO functions.
 	 */
@@ -1211,6 +1216,15 @@ int mmc_attach_sdio(struct mmc_host *host)
 		if (err)
 			goto remove_added;
 	}
+//==========================add by May==============================//	
+	for (tpl = host->card->tuples; tpl; tpl = tpl->next) {
+		if (tpl->code == 0x81 && tpl->size == 0x01 && tpl->data[0] == 0x01) {	
+			pr_err("%s: found AzureWave Module", __func__);
+			cis_chipvendor = 0x8101;
+			break;
+		}
+	}
+//==========================================================================//
 
 	mmc_claim_host(host);
 	return 0;

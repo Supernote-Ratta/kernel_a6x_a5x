@@ -39,9 +39,6 @@
 #include <linux/ioport.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
-#include <linux/regulator/driver.h>
-#include <linux/regulator/consumer.h>
-#include <linux/suspend.h>
 #include <asm/irq.h>
 
 #include <linux/notifier.h>
@@ -95,7 +92,6 @@ struct ft5x_ts_data {
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend	early_suspend;
 #endif
-	struct regulator *supply;
 };
 
 static struct ft5x_ts_data *priv_data;
@@ -360,12 +356,13 @@ static void ft5x_report_value(struct ft5x_ts_data *data)
 
 static irqreturn_t ft5x_ts_interrupt(int irq, void *dev_id)
 {
+	//printk("=====ft5x_ts_interrupt irq: %d\n", irq);
 	struct ft5x_ts_data *ft5x_ts = dev_id;
 	int ret = -1;
-
 	ret = ft5x_read_data(ft5x_ts);
-	if (ret == 0)
+	if (ret == 0) {
 		ft5x_report_value(ft5x_ts);
+	}
 	
 	return IRQ_HANDLED;
 }
@@ -515,15 +512,6 @@ static int ft5x_ts_probe(struct i2c_client *client, const struct i2c_device_id *
 //		printk("register wacom_touch_event_notifier error\n");
 //	}
 
-	ft5x_ts->supply = devm_regulator_get(&client->dev, "ft5x26");
-	if (IS_ERR(ft5x_ts->supply)) {
-		dev_err(&client->dev, "%s: regulator get failed\n", __func__);
-	} else {
-		dev_info(&client->dev, "ft5x26 regulator voltage = %d\n", regulator_get_voltage(ft5x_ts->supply));
-	}
-	err = regulator_enable(ft5x_ts->supply);
-	if (err)
-		dev_err(&client->dev, "regulator_enable failed\n");
 	printk("ft5x_ts_probe end\n");
 
 	return 0;
@@ -561,18 +549,11 @@ static int ft5x_ts_remove(struct i2c_client *client)
 	return 0;
 }
 
-static int wake_enable = 0;
 static int __maybe_unused ft5x_ts_i2c_suspend(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 
-	if (get_suspend_state() == PM_SUSPEND_IDLE) {
-		enable_irq_wake(client->irq);
-		wake_enable = 1;
-	}
-	//else {
-		//regulator_suspend_disable(priv_data->supply);
-	//}
+	disable_irq(client->irq);
 
 	return 0;
 }
@@ -581,17 +562,12 @@ static int __maybe_unused ft5x_ts_i2c_resume(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 
-	if (wake_enable == 1) {
-		disable_irq_wake(client->irq);
-		wake_enable = 0;
-	}
+	enable_irq(client->irq);
 
 	return 0;
 }
 
-const struct dev_pm_ops ft5x_ts_i2c_pm = {
-	SET_LATE_SYSTEM_SLEEP_PM_OPS(ft5x_ts_i2c_suspend, ft5x_ts_i2c_resume)
-};
+static SIMPLE_DEV_PM_OPS(ft5x_ts_i2c_pm, ft5x_ts_i2c_suspend, ft5x_ts_i2c_resume);
 
 static const struct i2c_device_id ft5x_ts_id[] = {
 	{ "ft5x26", 0 },
@@ -636,3 +612,4 @@ module_exit(ft5x_ts_exit);
 MODULE_AUTHOR("<wenfs@Focaltech-systems.com>");
 MODULE_DESCRIPTION("FocalTech ft5x TouchScreen driver");
 MODULE_LICENSE("GPL");
+

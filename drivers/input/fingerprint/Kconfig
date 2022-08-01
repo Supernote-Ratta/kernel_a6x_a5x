@@ -1,0 +1,14 @@
+menuconfig INPUT_FINGERPRINT
+	bool "Fingerprint"
+	help
+	  Say Y here, and a list of supported Fingerprint will be displayed.
+
+	  If unsure, say Y.
+
+if INPUT_FINGERPRINT
+
+source "drivers/input/fingerprint/ft9366/Kconfig"
+source "drivers/input/fingerprint/gf3626/Kconfig"
+endif
+
+

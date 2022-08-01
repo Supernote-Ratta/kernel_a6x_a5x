@@ -96,6 +96,23 @@ void rockchip_clear_system_status(unsigned long status)
 }
 EXPORT_SYMBOL_GPL(rockchip_clear_system_status);
 
+void rockchip_set_system_status_force(unsigned long status)
+{
+	//unsigned long old_system_status;
+	//unsigned int single_status_offset;
+
+	mutex_lock(&system_status_mutex);
+	if (status != system_status) {
+		//old_system_status = system_status;
+		system_status = status;
+		//printk("%s:old status=0x%lx, new=0x%lx\n", __func__, old_system_status, system_status);
+		rockchip_system_status_notifier_call_chain(system_status);
+	}
+	mutex_unlock(&system_status_mutex);
+}
+EXPORT_SYMBOL_GPL(rockchip_set_system_status_force);
+
+
 unsigned long rockchip_get_system_status(void)
 {
 	return system_status;

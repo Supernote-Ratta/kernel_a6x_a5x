@@ -260,6 +260,9 @@ static int ohci_platform_probe(struct platform_device *dev)
 	device_wakeup_enable(hcd->self.controller);
 
 	platform_set_drvdata(dev, hcd);
+    #ifdef CONFIG_LTE
+	device_init_wakeup(&dev->dev, true); //210616 patch from RK. for usb not suspend
+    #endif
 
 	return err;
 
@@ -368,7 +371,7 @@ static struct platform_driver ohci_platform_driver = {
 	.shutdown	= usb_hcd_platform_shutdown,
 	.driver		= {
 		.name	= "ohci-platform",
-		.pm	= &ohci_platform_pm_ops,
+		//.pm	= &ohci_platform_pm_ops,  // 20191204,hsl change for fast-wakup.
 		.of_match_table = ohci_platform_ids,
 	}
 };

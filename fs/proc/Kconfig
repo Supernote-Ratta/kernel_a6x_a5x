@@ -88,3 +88,16 @@ config PROC_UID
 	depends on PROC_FS && RT_MUTEXES
 	help
 	Provides aggregated per-uid information under /proc/uid.
+
+config PROC_RATTA
+	bool "sn project proc"
+	default n
+	depends on PROC_FS
+	help
+	Supernote Project proc
+
+config PROC_HT
+	bool "ht project proc"
+	default y
+	help
+	HT Project proc

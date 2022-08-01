@@ -246,4 +246,6 @@ enum {
 #define I2S_IO_4CH_OUT_6CH_IN	(6)
 #define I2S_IO_2CH_OUT_8CH_IN	(7)
 
+
+int rockchip_i2s_set_dsp_enabled(bool enabled);
 #endif /* _ROCKCHIP_IIS_H */

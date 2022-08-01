@@ -34,7 +34,6 @@
 #include <linux/i2c.h>
 #include <linux/version.h>
 #include <linux/suspend.h>
-#include <linux/soc/rockchip/rk_vendor_storage.h>
 
 #define INVALID_GPIO -1
 
@@ -114,13 +113,10 @@ struct papyrus_sess {
 	int pwr_up_pin;
 	int wake_up_pin;
 	int vcom_ctl_pin;
-	int pwr_en_pin;
 	/* True if a high WAKEUP brings Papyrus out of reset. */
-	int poweren_active_high;
 	int poweron_active_high;
 	int wakeup_active_high;
 	int vcomctl_active_high;
-	struct mutex power_lock;
 };
 
 //#define tps65185_SPEED	(400*1000)
@@ -162,7 +158,7 @@ struct papyrus_sess {
 #define PAPYRUS_MV_TO_VCOMREG(MV)	((MV) / 10)
 
 #define V3P3_EN_MASK	0x20
-#define PAPYRUS_V3P3OFF_DELAY_MS 20//100
+#define PAPYRUS_V3P3OFF_DELAY_MS 10//100
 
 struct papyrus_hw_state {
 	uint8_t tmst_value;
@@ -271,7 +267,6 @@ static void papyrus_hw_send_powerup(struct papyrus_sess *sess)
 {
 	int stat = 0;
 
-	mutex_lock(&sess->power_lock);
 	// set VADJ 
 	stat |= papyrus_hw_setreg(sess, PAPYRUS_ADDR_VADJ, sess->vadj);
 
@@ -324,7 +319,6 @@ static void papyrus_hw_send_powerdown(struct papyrus_sess *sess)
 	if (stat)
 		pr_err("papyrus: I2C error: %d\n", stat);
 #endif
-	mutex_unlock(&sess->power_lock);
 
 	return;
 }
@@ -388,10 +382,10 @@ static int papyrus_hw_arg_init(struct papyrus_sess *sess)
 #if 1
 	sess->vadj = 0x03;
 	
-	sess->upseq0 = SEQ_VEE(0) | SEQ_VNEG(1) | SEQ_VPOS(2) | SEQ_VDD(3);
+	sess->upseq0 = SEQ_VNEG(0) | SEQ_VEE(1) | SEQ_VPOS(2) | SEQ_VDD(3);
 	sess->upseq1 = UDLY_3ms(0) | UDLY_3ms(1) | UDLY_3ms(2) | UDLY_3ms(3);
 	
-	sess->dwnseq0 = SEQ_VDD(0) | SEQ_VPOS(1) | SEQ_VNEG(2) | SEQ_VEE(3);
+	sess->dwnseq0 = SEQ_VDD(0) | SEQ_VPOS(1) | SEQ_VEE(2) | SEQ_VNEG(3);
 	sess->dwnseq1 = DDLY_6ms(0) | DDLY_6ms(1) | DDLY_6ms(2) | DDLY_6ms(3);
 
 	sess->vcom1 = (PAPYRUS_MV_TO_VCOMREG(2500) & 0x00FF);
@@ -420,32 +414,21 @@ static int papyrus_hw_init(struct papyrus_sess *sess, const char *chip_id)
 		stat |= gpio_request(sess->wake_up_pin, "papyrus-wake_up");
 	if((sess->vcom_ctl_pin!= INVALID_GPIO))
 		stat |= gpio_request(sess->vcom_ctl_pin, "papyrus-vcom-ctl");
-	if((sess->pwr_en_pin!= INVALID_GPIO))
-		stat |= gpio_request(sess->pwr_en_pin, "papyrus-power-en");
 	if (stat) {
 		pr_err("papyrus: cannot reserve GPIOs\n");
 		stat = -ENODEV;
 		return stat;
 	}
-	gpio_export(sess->pwr_en_pin, false);
-	sess->poweren_active_high = 1;
 	sess->poweron_active_high = 1;
 	sess->wakeup_active_high = 1;
 	sess->vcomctl_active_high = 1;
-
-	if (sess->pwr_en_pin != INVALID_GPIO) {
-		gpio_direction_output(sess->pwr_en_pin,
-				      sess->poweren_active_high);
-		msleep(PAPYRUS_EEPROM_DELAY_MS);
-	}
-
 	if((sess->wake_up_pin != INVALID_GPIO)){
 		gpio_direction_output(sess->wake_up_pin, !sess->wakeup_active_high);
 		/* wait to reset papyrus */
 		msleep(PAPYRUS_SLEEP_MINIMUM_MS);
 		gpio_direction_output(sess->wake_up_pin, sess->wakeup_active_high);
 		if (sess->pwr_up_pin != INVALID_GPIO)
-			gpio_direction_output(sess->pwr_up_pin, !sess->poweron_active_high);
+			gpio_direction_output(sess->pwr_up_pin, sess->poweron_active_high);
 		gpio_direction_output(sess->vcom_ctl_pin, sess->vcomctl_active_high);
 		msleep(PAPYRUS_EEPROM_DELAY_MS);
 	}
@@ -474,7 +457,7 @@ static void papyrus_hw_power_req(struct pmic_sess *pmsess, bool up)
 {
 	struct papyrus_sess *sess = pmsess->drvpar;
 
-	printk("papyrus: i2c pwr req: %d\n", up);
+	pr_debug("papyrus: i2c pwr req: %d\n", up);
 	if (up){
 		papyrus_hw_send_powerup(sess);
 	} else {
@@ -720,7 +703,7 @@ static int papyrus_probe(struct pmic_sess *pmsess,struct i2c_client *client)
 	}
 	sess->client = client;
 	sess->adap = client->adapter;
-	mutex_init(&sess->power_lock);
+
 	papyrus_hw_arg_init(sess);
 
 	//if (pmsess->v3p3off_time_ms == -1)
@@ -746,12 +729,6 @@ static int papyrus_probe(struct pmic_sess *pmsess,struct i2c_client *client)
 	if (!gpio_is_valid(sess->pwr_up_pin)) {
 		sess->pwr_up_pin = INVALID_GPIO;
 		pr_err("tsp65185: failed to find pwr_up pin\n");
-	}
-
-	sess->pwr_en_pin = of_get_named_gpio_flags(node, "poweren_pin", 0, &flags);
-	if (!gpio_is_valid(sess->pwr_en_pin)) {
-		sess->pwr_en_pin = INVALID_GPIO;
-		pr_err("tsp65185: failed to find pwr_en pin\n");
 	}
 
 	stat = papyrus_hw_init(sess, pmsess->drv->id);
@@ -840,31 +817,18 @@ static ssize_t vcom_mv_get(struct device *dev, struct device_attribute *attr, ch
 	return sprintf(buf, "%d\n", value);
 }
 
-#define EINK_VCOM_MAX 64
 static ssize_t vcom_mv_set(struct device *dev, struct device_attribute *attr, const char *_buf, size_t _count)
 {
 	int value;
-	int ret;
-	char data[EINK_VCOM_MAX] = {0};
 
 	value = vcom_convertint(_buf);
 	if (value < 0 || value > 5110) {
 		printk("value should be 0~5110\n");
 		return _count;
 	}
-	printk("set chip vcom to: %dmV\n", value);
+	printk("set vcom to: %dmV\n", value);
 
 	tps65185_vcom_set(value);
-
-	memset(data, 0, EINK_VCOM_MAX);
-	memcpy(data, _buf, strlen(_buf) > EINK_VCOM_MAX ? EINK_VCOM_MAX : strlen(_buf));
-	printk("store vcom %s to vendor storage\n", _buf);
-
-	ret = rk_vendor_write(EINK_VCOM_ID, (void *)data, EINK_VCOM_MAX);
-	if (ret < 0) {
-		printk(KERN_ERR "%s failed to write vendor storage\n", __func__);
-		return ret;
-	}
 
 	return _count;
 }
@@ -900,7 +864,6 @@ static int tps65185_probe(struct i2c_client *client, const struct i2c_device_id 
 			dev_err(&client->dev, "create tps65185 sysfs error\n");
 	}
 
-	vcom_check();
 	tps65185_printk("tps65185_probe ok.\n");
 
 	return 0;
@@ -912,6 +875,17 @@ static int tps65185_remove(struct i2c_client *client)
 	memset(&pmic_sess_data,0,sizeof(struct pmic_sess));
 	return 0;
 }
+
+#if 0
+static int tps65185_suspend(struct i2c_client *client, pm_message_t mesg)
+{
+	return pmic_driver_tps65185_i2c.hw_pm_sleep((struct pmic_sess *)&pmic_sess_data);
+}
+static int tps65185_resume(struct i2c_client *client)
+{
+	return pmic_driver_tps65185_i2c.hw_pm_resume((struct pmic_sess *)&pmic_sess_data);
+}
+#endif
 
 static const struct i2c_device_id tps65185_id[] = {
 	{ TPS65185_I2C_NAME, 0 },
@@ -927,6 +901,8 @@ MODULE_DEVICE_TABLE(of, tps65185_dt_ids);
 static struct i2c_driver tps65185_driver = {
 	.probe	= tps65185_probe,
 	.remove 	= tps65185_remove,
+	//.suspend = tps65185_suspend,
+	//.resume  = tps65185_resume,
 	.id_table	= tps65185_id,
 	.driver = {
 		.of_match_table = tps65185_dt_ids,
@@ -968,7 +944,6 @@ int tps65185_vcom_get(void)
 	tps65185_printk("tps65185_vcom_get enter.\n");
 	if(!tpmic_sess_data.is_inited)
 		return -1;
-	mutex_lock(&sess->power_lock);
 	// VERIFICATION
 	gpio_direction_output(sess->wake_up_pin, 0);
 	msleep(10);
@@ -985,7 +960,6 @@ int tps65185_vcom_get(void)
 
 	if (stat)
 		pr_err("papyrus: I2C error: %d\n", stat);
-	mutex_unlock(&sess->power_lock);
 
 	return read_vcom_mv * 10;
 }
@@ -1002,8 +976,6 @@ int tps65185_vcom_set(int vcom_mv)
 	tps65185_printk("tps65185_vcom_set enter.\n");
 	if(!tpmic_sess_data.is_inited)
 		return -1;
-
-	mutex_lock(&sess->power_lock);
 	gpio_direction_output(sess->wake_up_pin, 1);
 	msleep(10);
 	// Set vcom voltage
@@ -1020,11 +992,9 @@ int tps65185_vcom_set(int vcom_mv)
 	{
 		stat |= papyrus_hw_getreg(sess, PAPYRUS_ADDR_INT_STATUS1, &rev_val);
 		tps65185_printk("PAPYRUS_ADDR_INT_STATUS1 = 0x%x\n",rev_val);
-		if (stat)
-			break;
 		msleep(50);
 	}
-
+	
 	// VERIFICATION
 	tps65185_printk("sess->vcom1 = 0x%x sess->vcom2 = 0x%x\n",sess->vcom1,sess->vcom2);
 	gpio_direction_output(sess->wake_up_pin, 0);
@@ -1042,37 +1012,6 @@ int tps65185_vcom_set(int vcom_mv)
 
 	if (stat)
 		pr_err("papyrus: I2C error: %d\n", stat);
-	mutex_unlock(&sess->power_lock);
-
-	return 0;
-}
-
-static int vcom_vendor_read(void)
-{
-	char *vcom_str = strstr(saved_command_line, "vcom=");
-
-	if (vcom_str)
-		return vcom_convertint(vcom_str+5);
-	else
-		return -1;
-}
-
-int vcom_check(void)
-{
-	int value_chip;
-	int value_vendor;
-
-	//check vcom value
-	value_vendor = vcom_vendor_read();
-	if (value_vendor < 0 || value_vendor > 5110) {
-		printk("invaild vcom value %d from vendor storage\n", value_vendor);
-		return -1;
-	}
-	value_chip = tps65185_vcom_get();
-	if (value_chip != value_vendor) {
-		printk("chip_vcom %d != vendor_vcom %d, set chip_vcom to vendor_vcom\n", value_chip, value_vendor);
-		tps65185_vcom_set(value_vendor);
-	}
 
 	return 0;
 }
@@ -1084,9 +1023,9 @@ static int tps65185_set_vcom_voltage(int vcom_mv)
 		return -1;
 	}
 
-	if(pmic_sess_data.is_inited)
-		pmic_driver_tps65185_i2c.set_vcom_voltage((struct pmic_sess *)&pmic_sess_data, vcom_mv);
-	return 0;
+        if(pmic_sess_data.is_inited)
+                pmic_driver_tps65185_i2c.set_vcom_voltage((struct pmic_sess *)&pmic_sess_data, vcom_mv);
+        return 0;
 }
 
 static int tps65185_power_on(void)
@@ -1108,22 +1047,11 @@ static int tps65185_temperature_get(int *temp)
 	else
 		return 0;
 }
-static int tps65185_suspend(void)
-{
-	return pmic_driver_tps65185_i2c.hw_pm_sleep((struct pmic_sess *)&pmic_sess_data);
-}
-static int tps65185_resume(void)
-{
-	return pmic_driver_tps65185_i2c.hw_pm_resume((struct pmic_sess *)&pmic_sess_data);
-}
-
 int register_ebc_pwr_ops(struct ebc_pwr_ops *ops)
 {
 	ops->power_on = tps65185_power_on;
 	ops->power_down = tps65185_power_down;
 	ops->vcom_set = tps65185_set_vcom_voltage;
-	ops->power_hw_sleep = tps65185_suspend;
-	ops->power_hw_resume = tps65185_resume;
 	return 0;
 }
 #ifdef CONFIG_EPD_TPS65185_SENSOR

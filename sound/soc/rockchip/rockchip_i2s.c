@@ -55,6 +55,8 @@ struct rk_i2s_dev {
 	unsigned int bclk_fs;
 };
 
+static struct rk_i2s_dev *g_i2s = NULL;
+
 /* txctrl/rxctrl lock */
 static DEFINE_SPINLOCK(lock);
 
@@ -287,6 +289,46 @@ err_pm_put:
 	return ret;
 }
 
+/*
+* dsp is xfm10213, which is always MASTER
+* when dsp connect to cpu directly, i2s of cpu must be SLAVE, and TFS(Transfer format select) must be pcm ;
+*/
+int rockchip_i2s_set_dsp_enabled(bool enabled)
+{
+
+	struct rk_i2s_dev *i2s = g_i2s;
+	unsigned int mask = 0, val = 0;
+
+	if (IS_ERR_OR_NULL(i2s)) return -ENOMEM;
+
+	dev_err(i2s->dev, "enter %s(%d). enabled = %d\n", __FUNCTION__, __LINE__, enabled);
+
+
+			mask = I2S_RXCR_IBM_MASK | I2S_RXCR_TFS_MASK | I2S_RXCR_PBM_MASK;
+			if (enabled) {
+				val = I2S_RXCR_IBM_NORMAL;
+			} else {
+				val = I2S_RXCR_IBM_LSJM;
+			}
+
+			regmap_update_bits(i2s->regmap, I2S_RXCR, mask, val);
+
+			mask = I2S_TXCR_IBM_MASK | I2S_TXCR_TFS_MASK | I2S_TXCR_PBM_MASK;
+			if (enabled) {
+				val = I2S_RXCR_IBM_NORMAL;
+			} else {
+				val = I2S_TXCR_IBM_LSJM;
+			}
+
+			regmap_update_bits(i2s->regmap, I2S_TXCR, mask, val);
+			dev_err(i2s->dev, "%s, update I2S_RXCR/I2S_TXCR, TFS mode is %s.\n", __func__, enabled ? "i2s-normal" : "Left-justified");
+
+
+	return 0;
+}
+
+EXPORT_SYMBOL(rockchip_i2s_set_dsp_enabled);
+
 static int rockchip_i2s_hw_params(struct snd_pcm_substream *substream,
 				  struct snd_pcm_hw_params *params,
 				  struct snd_soc_dai *dai)
@@ -438,6 +480,10 @@ static int rockchip_i2s_set_sysclk(struct snd_soc_dai *cpu_dai, int clk_id,
 {
 	struct rk_i2s_dev *i2s = to_info(cpu_dai);
 	int ret;
+	// 20180308,fix 12.28M for mic-dsp??
+	// XXX: we need to change the freq at android-HWC.
+	freq = 12288000;
+	dev_err(i2s->dev, "songshitian fixed freq 12.28M\n");
 
 	ret = clk_set_rate(i2s->mclk, freq);
 	if (ret)
@@ -607,6 +653,7 @@ static int rockchip_i2s_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
+	g_i2s = i2s;
 	i2s->dev = &pdev->dev;
 
 	i2s->grf = syscon_regmap_lookup_by_phandle(node, "rockchip,grf");

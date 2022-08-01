@@ -22,6 +22,8 @@
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
 
+#include <linux/htfy_dbg.h>
+
 #include "core.h"
 #include "sdio_cis.h"
 #include "bus.h"
@@ -150,6 +152,20 @@ static int mmc_bus_suspend(struct device *dev)
 	struct mmc_host *host = card->host;
 	int ret;
 
+	// 20210529-LOG:
+	// mmc_bus_suspend: fb_power_off=0,KEEP_POWER=0,ops Suspend=mmc_sdio_suspend+0x0/0x124,sdio=2
+    // mmc_bus_suspend: fb_power_off=0,KEEP_POWER=0,ops Suspend=mmc_suspend+0x0/0x50,sdio=0
+    // mmc_bus_suspend: fb_power_off=0,ops Suspend=mmc_suspend+0x0/0x50,sdio=0,emmc=1
+    // mmc_bus_suspend: fb_power_off=0,ops Suspend=mmc_sdio_suspend+0x0/0x124,sdio=1,emmc=0
+    //printk("%s: fb_power_off=%d,ops Suspend=%pF,dev=%s\n", __func__, 
+    //    fb_power_off(), host->bus_ops->suspend, dev_name(dev));
+
+    // 20210529: if Not call Emmc,we will Got error when resume: 可能是 EMMC已经掉电了，必须重新进行初始化。
+    // blk_update_request: I/O error, dev mmcblk1, sector 7464536
+    //if(!fb_power_off() && mmc_bus_is_sdio(host)) {
+    //    return 0;
+    //}
+    
 	ret = pm_generic_suspend(dev);
 	if (ret)
 		return ret;
@@ -359,6 +375,11 @@ int mmc_add_card(struct mmc_card *card)
 
 	mmc_card_set_present(card);
 
+    // 20210529,hsl add.
+    //if(card->type == MMC_TYPE_SDIO) {
+    //    card->dev.xresume = true;
+    //}
+    
 	return 0;
 }
 

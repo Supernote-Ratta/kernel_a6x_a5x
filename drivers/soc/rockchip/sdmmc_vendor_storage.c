@@ -71,6 +71,7 @@ struct vendor_info {
 #define GET_FLASH_INFO_IO	_IOW('r', 0x1A, unsigned int)
 #define GET_BAD_BLOCK_IO	_IOW('r', 0x03, unsigned int)
 #define GET_LOCK_FLAG_IO	_IOW('r', 0x53, unsigned int)
+#define READ_SECTORX_IO		_IOW('r', 0x06, unsigned int)
 
 #define VENDOR_REQ_TAG		0x56524551
 #define VENDOR_READ_IO		_IOW('v', 0x01, unsigned int)
@@ -137,6 +138,9 @@ static int emmc_vendor_storage_init(void)
 		g_vendor->free_offset = 0;
 		g_vendor->free_size = sizeof(g_vendor->data);
 	}
+	//printk("vendor_storage_init: tag=%08x,version=%d,tiem_num=%d,free_offset=%d\n", g_vendor->tag,
+	//	g_vendor->version, g_vendor->item_num, g_vendor->free_offset);
+		
 	return 0;
 error_exit:
 	kfree(g_vendor);
@@ -151,6 +155,7 @@ static int emmc_vendor_read(u32 id, void *pbuf, u32 size)
 	if (!g_vendor)
 		return -ENOMEM;
 
+	//printk("emmc_vendor_read: item_num=%d,id=%d\n", g_vendor->item_num, id);
 	for (i = 0; i < g_vendor->item_num; i++) {
 		if (g_vendor->item[i].id == id) {
 			if (size > g_vendor->item[i].size)
@@ -161,7 +166,7 @@ static int emmc_vendor_read(u32 id, void *pbuf, u32 size)
 			return size;
 		}
 	}
-	return (-1);
+	return (-ENOENT);
 }
 
 static int emmc_vendor_write(u32 id, void *pbuf, u32 size)
@@ -320,6 +325,36 @@ static int emmc_write_idblock(u32 size, u8 *buf, u32 *id_blk_tbl)
 	return (-1);
 }
 
+// 20210713: read n_sec*512 byts from addr.
+static int emmc_read_datax(u32 addr, u32 n_sec, u8 *buf)
+{
+	u32 i;
+	u32 ret = 0;
+
+	for (i = 0; i < n_sec; i++) {
+		// 20210714: 这个地址是 以 sector 为单位的地址( 512 ).
+		ret = rk_emmc_transfer(buf + i * 512, addr + i, 512, 0);
+		//printk("emmc_read_datax: i=%d,n_sec=%d,addrx=%08x\n", i, n_sec, addr+i);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+#if 0
+// 20210715: 用来测试SN，清除 pv 里面的数据.
+static int emmc_clear_pvdata(void)
+{
+	int ret;
+	char buf[512];
+	u32  addr = 0x8b000;
+	memset(buf, 0, 512);
+	ret = rk_emmc_transfer(buf, addr, 512, 1);
+	printk("emmc_clear_pvdata-done: addrx=%08x\n", addr);
+	return ret;
+}
+#endif 
+
 static int vendor_storage_open(struct inode *inode, struct file *file)
 {
 	return 0;
@@ -410,8 +445,8 @@ static u32 rk_crc_32(unsigned char *buf, u32 len)
 static long vendor_storage_ioctl(struct file *file, unsigned int cmd,
 				 unsigned long arg)
 {
-	long ret = -1;
-	u32 size;
+	long ret = -EINVAL;
+	int  size;
 	struct rk_sys_req *s_req;
 	struct rk_vendor_req *v_req;
 	u32 *page_buf;
@@ -430,16 +465,21 @@ static long vendor_storage_ioctl(struct file *file, unsigned int cmd,
 			ret = -EFAULT;
 			break;
 		}
+		//printk("VENDOR_READ_IO:tag=0x%x,id=%d,len=%d\n", v_req->tag,
+		//	v_req->id, v_req->len);
 		if (v_req->tag == VENDOR_REQ_TAG) {
 			size = emmc_vendor_read(v_req->id, v_req->data,
 						v_req->len);
-			if (size != -1) {
+			if (size > 0) {
 				v_req->len = size;
 				ret = 0;
 				if (copy_to_user((void __user *)arg,
 						 page_buf,
 						 v_req->len + 8))
 					ret = -EFAULT;
+			} else {
+				printk("VENDOR_READ_IO: Error,size=%d\n", size);
+				ret = size;
 			}
 		}
 	} break;
@@ -567,12 +607,36 @@ static long vendor_storage_ioctl(struct file *file, unsigned int cmd,
 		ret = 0;
 	} break;
 
+	case READ_SECTORX_IO:
+	{
+		u32 addrx;
+		if (copy_from_user(page_buf, (void __user *)arg, 8)) {
+			ret = -EFAULT;
+			goto exit;
+		}
+
+		// 20210714: 上层传递下来的地址和长度的单位都是 sector(512).
+		addrx = page_buf[0];
+		size = page_buf[1];
+		// printk("READ_SECTORX_IO: addrx=0x%x, size=%d\n", addrx, size);
+		ret = emmc_read_datax(addrx, size, (u8 *)page_buf);
+		if(ret) {
+			goto exit;
+		}
+		if (copy_to_user((void __user *)arg, page_buf,
+				size * 512)) {
+			ret = -EFAULT;
+			goto exit;
+		}
+		ret = 0;
+	} break;
+	
 	default:
 		ret = -EFAULT;
 		goto exit;
 	}
 exit:
-	pr_info("ret = %lx\n", ret);
+	// pr_info("ret = %lx\n", ret);
 	kfree(page_buf);
 	return ret;
 }
@@ -592,7 +656,7 @@ static struct miscdevice vender_storage_dev = {
 
 static int vendor_init_thread(void *arg)
 {
-	int ret, try_count = 5;
+	int ret, try_count = 10;
 
 	do {
 		ret = emmc_vendor_storage_init();
@@ -617,6 +681,8 @@ static int __init vendor_storage_init(void)
 	kthread_run(vendor_init_thread, (void *)NULL, "vendor_storage_init");
 	return 0;
 }
+device_initcall_sync(vendor_storage_init);
+
 
 static __exit void vendor_storage_deinit(void)
 {
@@ -624,5 +690,5 @@ static __exit void vendor_storage_deinit(void)
 		misc_deregister(&vender_storage_dev);
 }
 
-device_initcall_sync(vendor_storage_init);
 module_exit(vendor_storage_deinit);
+

@@ -36,11 +36,9 @@ typedef int __bitwise suspend_state_t;
 #define PM_SUSPEND_ON		((__force suspend_state_t) 0)
 #define PM_SUSPEND_FREEZE	((__force suspend_state_t) 1)
 #define PM_SUSPEND_STANDBY	((__force suspend_state_t) 2)
-#define PM_SUSPEND_IDLE		((__force suspend_state_t) 3)
-#define PM_SUSPEND_ULTRA	((__force suspend_state_t) 4)
-#define PM_SUSPEND_MEM		((__force suspend_state_t) 5)
+#define PM_SUSPEND_MEM		((__force suspend_state_t) 3)
 #define PM_SUSPEND_MIN		PM_SUSPEND_FREEZE
-#define PM_SUSPEND_MAX		((__force suspend_state_t) 6)
+#define PM_SUSPEND_MAX		((__force suspend_state_t) 4)
 
 enum suspend_stat_step {
 	SUSPEND_FREEZE = 1,
@@ -437,7 +435,9 @@ extern bool pm_get_wakeup_count(unsigned int *count, bool block);
 extern bool pm_save_wakeup_count(unsigned int count);
 extern void pm_wakep_autosleep_enabled(bool set);
 extern void pm_print_active_wakeup_sources(void);
-extern void pm_get_active_wakeup_sources(char *pending_sources, size_t max);
+
+// 20211116,hsl change return value.
+extern bool pm_get_active_wakeup_sources(char *pending_sources, size_t max);
 
 static inline void lock_system_sleep(void)
 {
@@ -539,7 +539,6 @@ static inline void page_key_read(unsigned long *pfn) {}
 static inline void page_key_memorize(unsigned long *pfn) {}
 static inline void page_key_write(void *address) {}
 
-suspend_state_t get_suspend_state(void);
 #endif /* !CONFIG_ARCH_SAVE_PAGE_KEYS */
 
 #endif /* _LINUX_SUSPEND_H */

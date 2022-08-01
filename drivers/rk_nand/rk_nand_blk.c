@@ -812,8 +812,10 @@ void rknand_dev_resume(void)
 void rknand_dev_shutdown(void)
 {
 	pr_info("rknand_shutdown...\n");
-	if (!rk_nand_dev_initialised)
+	if (!rk_nand_dev_initialised) {
+		pr_info("rknand_shutdown: exit cause !initialised\n");
 		return;
+	}
 	if (mytr.quit == 0) {
 		mytr.quit = 1;
 		wake_up(&mytr.thread_wq);

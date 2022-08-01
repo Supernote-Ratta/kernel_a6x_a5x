@@ -732,10 +732,18 @@ static int drms_uA_update(struct regulator_dev *rdev)
 	return err;
 }
 
+// 20191208,hsl fix for fast-wakeup.
+extern bool fb_power_off(void);
 static int suspend_set_state(struct regulator_dev *rdev,
 	struct regulator_state *rstate)
 {
 	int ret = 0;
+
+	// 20191208,hsl add.
+	/*if( &rdev->constraints->state_mem == rstate ) {
+		printk("%s state_mem:enabled=%d,disabled=%d\n", rdev->desc->name,
+			rstate->enabled, rstate->disabled);
+	}*/
 
 	/* If we have no suspend mode configration don't set anything;
 	 * only warn if the driver implements set_suspend_voltage or
@@ -749,16 +757,25 @@ static int suspend_set_state(struct regulator_dev *rdev,
 	}
 
 	if (rstate->enabled && rstate->disabled) {
-		rdev_err(rdev, "invalid configuration\n");
-		return -EINVAL;
-	}
+		rdev_warn(rdev, "enabled and disabled at the sametime,fb_power_off=%d\n", fb_power_off());
+		//return -EINVAL;
+		if(fb_power_off()) {
+			if (rdev->desc->ops->set_suspend_disable)
+				ret = rdev->desc->ops->set_suspend_disable(rdev);
+		} else {
+			if (rdev->desc->ops->set_suspend_enable)
+				ret = rdev->desc->ops->set_suspend_enable(rdev);
+		}
+	} else {
 
-	if (rstate->enabled && rdev->desc->ops->set_suspend_enable)
-		ret = rdev->desc->ops->set_suspend_enable(rdev);
-	else if (rstate->disabled && rdev->desc->ops->set_suspend_disable)
-		ret = rdev->desc->ops->set_suspend_disable(rdev);
-	else /* OK if set_suspend_enable or set_suspend_disable is NULL */
-		ret = 0;
+		if (rstate->enabled && rdev->desc->ops->set_suspend_enable)
+			ret = rdev->desc->ops->set_suspend_enable(rdev);
+		else if (rstate->disabled && rdev->desc->ops->set_suspend_disable)
+			ret = rdev->desc->ops->set_suspend_disable(rdev);
+		else {/* OK if set_suspend_enable or set_suspend_disable is NULL */
+			ret = 0;
+		}
+	}
 
 	if (ret < 0) {
 		rdev_err(rdev, "failed to enabled/disable\n");
@@ -2319,20 +2336,6 @@ int regulator_disable(struct regulator *regulator)
 	return ret;
 }
 EXPORT_SYMBOL_GPL(regulator_disable);
-
-int regulator_suspend_disable(struct regulator *regulator)
-{
-	struct regulator_dev *rdev = regulator->rdev;
-	int ret = 0;
-
-	mutex_lock(&rdev->mutex);
-        if (rdev && rdev->desc && rdev->desc->ops && rdev->desc->ops->set_suspend_disable)
-        	ret = rdev->desc->ops->set_suspend_disable(rdev);
-	mutex_unlock(&rdev->mutex);
-
-	return ret;
-}
-EXPORT_SYMBOL_GPL(regulator_suspend_disable);
 
 /* locks held by regulator_force_disable() */
 static int _regulator_force_disable(struct regulator_dev *rdev)

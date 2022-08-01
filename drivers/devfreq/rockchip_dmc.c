@@ -1130,58 +1130,6 @@ static struct devfreq_dev_profile rockchip_devfreq_dmc_profile = {
 	.get_cur_freq	= rockchip_dmcfreq_get_cur_freq,
 };
 
-static __maybe_unused int rockchip_dmcfreq_suspend(struct device *dev)
-{
-	struct rockchip_dmcfreq *dmcfreq = dev_get_drvdata(dev);
-	int ret = 0;
-
-	if (!dmcfreq)
-		return 0;
-
-	if (dmcfreq->edev) {
-		ret = devfreq_event_disable_edev(dmcfreq->edev);
-		if (ret < 0) {
-			dev_err(dev, "failed to disable the devfreq-event devices\n");
-			return ret;
-		}
-	}
-
-	ret = devfreq_suspend_device(dmcfreq->devfreq);
-	if (ret < 0) {
-		dev_err(dev, "failed to suspend the devfreq devices\n");
-		return ret;
-	}
-
-	return 0;
-}
-
-static __maybe_unused int rockchip_dmcfreq_resume(struct device *dev)
-{
-	struct rockchip_dmcfreq *dmcfreq = dev_get_drvdata(dev);
-	int ret = 0;
-
-	if (!dmcfreq)
-		return 0;
-
-	if (dmcfreq->edev) {
-		ret = devfreq_event_enable_edev(dmcfreq->edev);
-		if (ret < 0) {
-			dev_err(dev, "failed to enable the devfreq-event devices\n");
-			return ret;
-		}
-	}
-
-	ret = devfreq_resume_device(dmcfreq->devfreq);
-	if (ret < 0) {
-		dev_err(dev, "failed to resume the devfreq devices\n");
-		return ret;
-	}
-	return ret;
-}
-
-static SIMPLE_DEV_PM_OPS(rockchip_dmcfreq_pm, rockchip_dmcfreq_suspend,
-			 rockchip_dmcfreq_resume);
-
 static int rockchip_dmcfreq_init_freq_table(struct device *dev,
 					    struct devfreq_dev_profile *devp)
 {
@@ -2220,8 +2168,9 @@ static int rockchip_dmcfreq_system_status_notifier(struct notifier_block *nb,
 	struct rockchip_dmcfreq *dmcfreq = system_status_to_dmcfreq(nb);
 	unsigned long target_rate = 0;
 	unsigned int refresh = false;
-	bool is_fixed = false;
+	bool is_fixed = true; //false; // 20200617-hsl: disable auto-freq.
 
+#if 0
 	if (dmcfreq->dualview_rate && dmcfreq->isp_rate &&
 	    (status & SYS_STATUS_ISP) &&
 	    (status & SYS_STATUS_LCDC0) &&
@@ -2234,15 +2183,22 @@ static int rockchip_dmcfreq_system_status_notifier(struct notifier_block *nb,
 		is_fixed = true;
 		goto next;
 	}
-
-	if (dmcfreq->isp_rate && (status & SYS_STATUS_ISP)) {
-		target_rate = dmcfreq->isp_rate;
-		is_fixed = true;
-		goto next;
-	}
+#endif
 
 	if (dmcfreq->reboot_rate && (status & SYS_STATUS_REBOOT)) {
 		target_rate = dmcfreq->reboot_rate;
+		//is_fixed = true;
+		goto next;
+	}
+
+	if (dmcfreq->isp_rate && (status & SYS_STATUS_ISP)) {
+		target_rate = dmcfreq->isp_rate;
+		//is_fixed = true;
+		goto next;
+	}
+
+	if (dmcfreq->video_4k_rate && (status & SYS_STATUS_VIDEO_4K)) {
+		target_rate = dmcfreq->video_4k_rate;
 		goto next;
 	}
 
@@ -2262,6 +2218,12 @@ static int rockchip_dmcfreq_system_status_notifier(struct notifier_block *nb,
 			target_rate = dmcfreq->performance_rate;
 	}
 
+	if (dmcfreq->boost_rate && (status & SYS_STATUS_BOOST)) {
+		if (dmcfreq->boost_rate > target_rate)
+			target_rate = dmcfreq->boost_rate;
+	}
+
+	/*
 	if (dmcfreq->hdmi_rate && (status & SYS_STATUS_HDMI)) {
 		if (dmcfreq->hdmi_rate > target_rate)
 			target_rate = dmcfreq->hdmi_rate;
@@ -2276,22 +2238,102 @@ static int rockchip_dmcfreq_system_status_notifier(struct notifier_block *nb,
 		if (dmcfreq->video_4k_10b_rate > target_rate)
 			target_rate = dmcfreq->video_4k_10b_rate;
 	}
+	*/
 
 	if (dmcfreq->video_1080p_rate && (status & SYS_STATUS_VIDEO_1080P)) {
 		if (dmcfreq->video_1080p_rate > target_rate)
 			target_rate = dmcfreq->video_1080p_rate;
 	}
 
+	if (dmcfreq->normal_rate && target_rate == 0) {
+	    target_rate = dmcfreq->normal_rate;
+	}
 next:
 
 	dev_dbg(&dmcfreq->devfreq->dev, "status=0x%x\n", (unsigned int)status);
-	dmcfreq->refresh = refresh;
-	dmcfreq->is_fixed = is_fixed;
-	dmcfreq->status_rate = target_rate;
-	rockchip_dmcfreq_update_target(dmcfreq);
+	printk("dmcfreq_sys_status_notify:status=0x%lx, target_rate=%ld,old target=%ld\n",
+		status, target_rate, dmcfreq->status_rate);
+	if( target_rate != dmcfreq->status_rate) {  // 20190518,hsl add.
+		dmcfreq->refresh = refresh;
+		dmcfreq->is_fixed = is_fixed;
+		dmcfreq->status_rate = target_rate;
+		rockchip_dmcfreq_update_target(dmcfreq);
 
+		#ifdef CONFIG_DEBUG_BUILD
+		// 20190913: use to trace crash.
+		printk("dmcfreq_sys_status_notify:update DDR-FREQ done, now freq=%ld\n",
+			dmcfreq->devfreq->previous_freq);
+		#endif
+	}
 	return NOTIFY_OK;
 }
+
+static __maybe_unused int rockchip_dmcfreq_suspend(struct device *dev)
+{
+   struct rockchip_dmcfreq *dmcfreq = dev_get_drvdata(dev);
+   //struct devfreq 			*df = dmcfreq->devfreq;
+   int ret = 0;
+
+   if (!dmcfreq)
+	   return 0;
+
+   // 20191206-hsl,increase the ddr freq for fast-wakeup.
+   // [   31.412672] dmcfreq_suspend0:previous_freq=194000000,max_freq=194000000,min_freq=194000000
+   // [   31.414808] dmcfreq_suspend1:previous_freq=450000000,max_freq=450000000,status_rate=450000000
+   //printk("dmcfreq_suspend0:previous_freq=%ld,max_freq=%ld,min_freq=%ld\n",
+   //	df->previous_freq, df->max_freq, df->min_freq);
+   dmcfreq->refresh = true;
+   dmcfreq->is_fixed = true;
+
+   // 20200618: don't change the max_freq.
+   dmcfreq->status_rate = dmcfreq->suspend_rate; //df->max_freq =
+   rockchip_dmcfreq_update_target(dmcfreq);
+   //printk("dmcfreq_suspend1:previous_freq=%ld,max_freq=%ld,status_rate=%ld\n",
+   //	df->previous_freq, df->max_freq, dmcfreq->status_rate);
+
+   if (dmcfreq->edev) {
+	   ret = devfreq_event_disable_edev(dmcfreq->edev);
+	   if (ret < 0) {
+		   dev_err(dev, "failed to disable the devfreq-event devices\n");
+		   return ret;
+	   }
+   }
+
+   ret = devfreq_suspend_device(dmcfreq->devfreq);
+   if (ret < 0) {
+	   dev_err(dev, "failed to suspend the devfreq devices\n");
+	   return ret;
+   }
+
+   return 0;
+}
+
+static __maybe_unused int rockchip_dmcfreq_resume(struct device *dev)
+{
+   struct rockchip_dmcfreq *dmcfreq = dev_get_drvdata(dev);
+   int ret = 0;
+
+   if (!dmcfreq)
+	   return 0;
+
+   if (dmcfreq->edev) {
+	   ret = devfreq_event_enable_edev(dmcfreq->edev);
+	   if (ret < 0) {
+		   dev_err(dev, "failed to enable the devfreq-event devices\n");
+		   return ret;
+	   }
+   }
+
+   ret = devfreq_resume_device(dmcfreq->devfreq);
+   if (ret < 0) {
+	   dev_err(dev, "failed to resume the devfreq devices\n");
+	   return ret;
+   }
+   return ret;
+}
+
+static SIMPLE_DEV_PM_OPS(rockchip_dmcfreq_pm, rockchip_dmcfreq_suspend,
+			rockchip_dmcfreq_resume);
 
 static int rockchip_dmcfreq_reboot_notifier(struct notifier_block *nb,
 					    unsigned long action, void *ptr)
@@ -2304,6 +2346,8 @@ static int rockchip_dmcfreq_reboot_notifier(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
+// 20200618,hsl fix.
+#if 0
 static int rockchip_dmcfreq_fb_notifier(struct notifier_block *nb,
 					unsigned long action, void *ptr)
 {
@@ -2334,14 +2378,39 @@ static int rockchip_dmcfreq_fb_notifier(struct notifier_block *nb,
 
 	return NOTIFY_OK;
 }
+#endif
 
 static ssize_t rockchip_dmcfreq_status_show(struct device *dev,
 					    struct device_attribute *attr,
 					    char *buf)
 {
 	unsigned int status = rockchip_get_system_status();
-
-	return sprintf(buf, "0x%x\n", status);
+	char		 name[256]={0};
+	if( status & SYS_STATUS_ISP ) {
+		strcat(name, "|ISP");
+	}
+	if( status & SYS_STATUS_REBOOT ) {
+		strcat(name, "|REBOOT");
+	}
+	if( status & SYS_STATUS_VIDEO_4K ) {
+		strcat(name, "|V4K");
+	}
+	if( status & SYS_STATUS_BOOST ) {
+		strcat(name, "|BOOT");
+	}
+	if( status & SYS_STATUS_VIDEO_1080P ) {
+		strcat(name, "|V1080P");
+	}
+	if( status & SYS_STATUS_NORMAL ) {
+		strcat(name, "|NOR");
+	}
+	if( status & SYS_STATUS_LOW_POWER ) {
+		strcat(name, "|LP");
+	}
+	if( status & SYS_STATUS_SUSPEND ) {
+		strcat(name, "|SUSP");
+	}
+	return sprintf(buf, "0x%x: %s\n", status, name);
 }
 
 static unsigned long rockchip_get_video_param(char **str)
@@ -2526,6 +2595,34 @@ static ssize_t rockchip_dmcfreq_status_store(struct device *dev,
 	case 'n':
 		/* clear performance flag */
 		rockchip_clear_system_status(SYS_STATUS_PERFORMANCE);
+		break;
+
+	case  'x' :
+		// 20190518: when the user set perform(rkPower-init),we assume that boost done!
+		rockchip_clear_system_status(SYS_STATUS_REBOOT/*SYS_STATUS_NORMAL*/);
+		break;
+
+	// 20190615,hsl add for power-ctrl. A:194M, B:328M, C:450M, D: 528M, E: 66M, F: 786M.
+	// --20200617: 此处对频率的定义，要和 dts 里面各个状态对应的 频率对应。
+	case 'A':
+		rockchip_set_system_status_force(SYS_STATUS_LOW_POWER);
+		break;
+	case 'B':
+		rockchip_set_system_status_force(SYS_STATUS_NORMAL);
+		break;
+	case 'C':
+		rockchip_set_system_status_force(SYS_STATUS_VIDEO_1080P);
+		break;
+
+	// 20190803,hsl add 528M for eink-video
+	case 'D':
+		rockchip_set_system_status_force(SYS_STATUS_BOOST);
+		break;
+	case 'E':
+		rockchip_set_system_status_force(SYS_STATUS_VIDEO_4K);
+		break;
+	case 'F':
+		rockchip_set_system_status_force(SYS_STATUS_ISP);
 		break;
 	default:
 		break;
@@ -3095,10 +3192,12 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 	if (ret)
 		dev_err(dev, "failed to register reboot nb\n");
 
+#if 0  // 20200618-hsl.
 	data->fb_nb.notifier_call = rockchip_dmcfreq_fb_notifier;
 	ret = fb_register_client(&data->fb_nb);
 	if (ret)
 		dev_err(dev, "failed to register fb nb\n");
+#endif
 
 	ret = sysfs_create_file(&data->devfreq->dev.kobj,
 				&dev_attr_system_status.attr);
@@ -3142,7 +3241,8 @@ static int rockchip_dmcfreq_probe(struct platform_device *pdev)
 		}
 	}
 
-	rockchip_set_system_status(SYS_STATUS_NORMAL);
+	// 20200618-hsl: set to reboot( max ddr-freq ),increase 20% boot time.
+	rockchip_set_system_status(SYS_STATUS_REBOOT);
 
 	return 0;
 }

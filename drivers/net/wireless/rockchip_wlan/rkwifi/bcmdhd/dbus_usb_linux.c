@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Dongle BUS interface
  * USB Linux Implementation

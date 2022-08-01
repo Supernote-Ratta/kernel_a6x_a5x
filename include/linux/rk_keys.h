@@ -11,8 +11,6 @@
 #ifdef CONFIG_KEYBOARD_ROCKCHIP
 void rk_send_power_key(int state);
 void rk_send_wakeup_key(void);
-void rk8xx_send_power_key(int state);
-void rk8xx_send_wakeup_key(void);
 #else
 static inline void rk_send_power_key(int state) { }
 static inline void rk_send_wakeup_key(void) { }

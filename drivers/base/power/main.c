@@ -882,7 +882,7 @@ void dpm_resume(pm_message_t state)
 		put_device(dev);
 	}
 	mutex_unlock(&dpm_list_mtx);
-	async_synchronize_full();
+	async_synchronize_full();  //20191204,hsl don't wait?? when rm usb/host suspend,we can sync here.
 	dpm_show_time(starttime, state, NULL);
 
 	cpufreq_resume();

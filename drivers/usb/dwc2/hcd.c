@@ -3261,8 +3261,13 @@ void dwc2_hcd_queue_transactions(struct dwc2_hsotg *hsotg,
 
 static void dwc2_conn_id_status_change(struct work_struct *work)
 {
+#ifdef CONFIG_LTE
+	struct dwc2_hsotg *hsotg = container_of(work, struct dwc2_hsotg,
+						wf_otg.work);  // 20200530,hsl fix.
+#else
 	struct dwc2_hsotg *hsotg = container_of(work, struct dwc2_hsotg,
 						wf_otg);
+#endif
 	u32 count = 0;
 	u32 gotgctl;
 	unsigned long flags;
@@ -5047,8 +5052,13 @@ static void dwc2_hcd_free(struct dwc2_hsotg *hsotg)
 	}
 
 	if (hsotg->wq_otg) {
-		if (!cancel_work_sync(&hsotg->wf_otg))
+#ifdef CONFIG_LTE
+		if (!cancel_delayed_work_sync((&hsotg->wf_otg)) /* !cancel_work_sync(&hsotg->wf_otg)*/)
 			flush_workqueue(hsotg->wq_otg);
+#else
+		if (!cancel_work_sync((&hsotg->wf_otg)) /* !cancel_work_sync(&hsotg->wf_otg)*/)
+			flush_workqueue(hsotg->wq_otg);
+#endif
 		destroy_workqueue(hsotg->wq_otg);
 	}
 
@@ -5154,7 +5164,11 @@ int dwc2_hcd_init(struct dwc2_hsotg *hsotg, int irq)
 		dev_err(hsotg->dev, "Failed to create workqueue\n");
 		goto error2;
 	}
+#ifdef CONFIG_LTE
+	INIT_DELAYED_WORK(&hsotg->wf_otg, dwc2_conn_id_status_change);
+#else
 	INIT_WORK(&hsotg->wf_otg, dwc2_conn_id_status_change);
+#endif
 
 	setup_timer(&hsotg->wkp_timer, dwc2_wakeup_detected,
 		    (unsigned long)hsotg);

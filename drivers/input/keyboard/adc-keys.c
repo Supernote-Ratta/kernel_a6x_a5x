@@ -165,7 +165,7 @@ static int adc_keys_probe(struct platform_device *pdev)
 	input = poll_dev->input;
 
 	input->name = pdev->name;
-	input->phys = "adc-keys/input0";
+	input->phys = "adc-keys/inputX";
 
 	input->id.bustype = BUS_HOST;
 	input->id.vendor = 0x0001;
@@ -185,6 +185,7 @@ static int adc_keys_probe(struct platform_device *pdev)
 		return error;
 	}
 
+    //dev_err(dev, "adc_keys_probe OK,name=%s,num=%d\n", input->name, st->num_keys);
 	return 0;
 }
 

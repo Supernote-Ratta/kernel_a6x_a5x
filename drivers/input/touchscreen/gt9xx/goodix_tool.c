@@ -1,6 +1,7 @@
-/* drivers/input/touchscreen/goodix_tool.c
+/* 
+ * Goodix GT9xx touchscreen driver
  * 
- * 2010 - 2012 Goodix Technology.
+ * Copyright  (C)  2010 - 2016 Goodix. Ltd.
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -13,14 +14,11 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU 
  * General Public License for more details.
  * 
- * Version:2.2
- *        V1.0:2012/05/01,create file.
- *        V1.2:2012/06/08,modify some warning.
- *        V1.4:2012/08/28,modified to support GT9XX
- *        V1.6:new proc name
- *        V2.2: compatible with Linux 3.10, 2014/01/14
+ * Version: 2.4.0.1
+ * Release Date: 2016/10/26
  */
 
+   
 #include "gt9xx.h"
 
 #define DATA_LENGTH_UINT    512
@@ -250,7 +248,6 @@ s32 init_wr_node(struct i2c_client *client)
     register_i2c_func();
 
     tool_set_proc_name(procname);
-    //goodix_proc_entry = create_proc_entry(procname, 0666, NULL);
     goodix_proc_entry = proc_create(procname, 0666, NULL, &tool_ops);
     if (goodix_proc_entry == NULL)
     {
@@ -260,8 +257,6 @@ s32 init_wr_node(struct i2c_client *client)
     else
     {
         GTP_INFO("Create proc entry success!");
-        //goodix_proc_entry->write_proc = goodix_tool_write;
-        //goodix_proc_entry->read_proc = goodix_tool_read;
     }
 
     return SUCCESS;
@@ -327,8 +322,6 @@ static u8 comfirm(void)
     s32 i = 0;
     u8 buf[32];
     
-//    memcpy(&buf[GTP_ADDR_LENGTH - cmd_head.addr_len], &cmd_head.flag_addr, cmd_head.addr_len);
-//    memcpy(buf, &cmd_head.flag_addr, cmd_head.addr_len);//Modified by Scott, 2012-02-17
     memcpy(buf, cmd_head.flag_addr, cmd_head.addr_len);
    
     for (i = 0; i < cmd_head.times; i++)
@@ -517,7 +510,6 @@ Input:
 Output:
     Return read length.
 ********************************************************/
-//static s32 goodix_tool_read( char *page, char **start, off_t off, int count, int *eof, void *data )
 ssize_t goodix_tool_read(struct file *file, char __user *page, size_t size, loff_t *ppos)
 {
     s32 ret = 0;
@@ -529,6 +521,7 @@ ssize_t goodix_tool_read(struct file *file, char __user *page, size_t size, loff
         //GTP_DEBUG("[HEAD]wr: %d", cmd_head.wr);
         //GTP_DEBUG("[PARAM]size: %d, *ppos: %d", size, (int)*ppos);
         //GTP_DEBUG("[TOOL_READ]ADB call again, return it.");
+        *ppos = 0;
         return 0;
     }
     

@@ -159,6 +159,8 @@ static void of_get_regulation_constraints(struct device_node *np,
 			continue;
 		}
 
+		suspend_state->enabled = suspend_state->disabled = false; // 20191208,hsl add.
+
 		suspend_np = of_get_child_by_name(np, regulator_states[i]);
 		if (!suspend_np || !suspend_state)
 			continue;
@@ -181,7 +183,7 @@ static void of_get_regulation_constraints(struct device_node *np,
 		if (of_property_read_bool(suspend_np,
 					"regulator-on-in-suspend"))
 			suspend_state->enabled = true;
-		else if (of_property_read_bool(suspend_np,
+		/*else */if (of_property_read_bool(suspend_np,	// 20191208,hsl.we want two state for fast-wakeup.
 					"regulator-off-in-suspend"))
 			suspend_state->disabled = true;
 

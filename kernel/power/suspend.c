@@ -34,7 +34,7 @@
 
 #include "power.h"
 
-const char *pm_labels[] = { "mem", "ultra", "idle", "standby", "freeze", NULL };
+const char *pm_labels[] = { "mem", "standby", "freeze", NULL };
 const char *pm_states[PM_SUSPEND_MAX];
 
 unsigned int pm_suspend_global_flags;
@@ -164,7 +164,7 @@ EXPORT_SYMBOL_GPL(suspend_set_ops);
  */
 int suspend_valid_only_mem(suspend_state_t state)
 {
-	return (state == PM_SUSPEND_MEM) || (state == PM_SUSPEND_IDLE) || (state == PM_SUSPEND_ULTRA);
+	return state == PM_SUSPEND_MEM;
 }
 EXPORT_SYMBOL_GPL(suspend_valid_only_mem);
 
@@ -307,6 +307,25 @@ void __weak arch_suspend_enable_irqs(void)
 	local_irq_enable();
 }
 
+void __weak platform_suspend_before_noirqs(void)
+{
+}
+
+/* default implementation */
+void __weak platform_resume_after_noirqs(void)
+{
+}
+
+/*
+// 20191204,hsl add for debug wakeup-time.
+static void htfy_dbg_gpio(void)
+{
+	gpio_set_value(71, 1);
+	__delay(2000);
+	gpio_set_value(71, 0);
+}
+*/
+
 /**
  * suspend_enter - Make the system enter the given sleep state.
  * @state: System sleep state to enter.
@@ -332,6 +351,8 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 			suspend_stats.failed_devs[last_dev]);
 		goto Platform_finish;
 	}
+
+	platform_suspend_before_noirqs();
 	error = platform_suspend_prepare_late(state);
 	if (error)
 		goto Devices_early_resume;
@@ -345,6 +366,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 			suspend_stats.failed_devs[last_dev]);
 		goto Platform_early_resume;
 	}
+
 	error = platform_suspend_prepare_noirq(state);
 	if (error)
 		goto Platform_wake;
@@ -384,6 +406,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 			trace_suspend_resume(TPS("machine_suspend"),
 				state, false);
 			events_check_enabled = false;
+			// htfy_dbg_gpio();
 		} else if (*wakeup) {
 			pm_get_active_wakeup_sources(suspend_abort,
 				MAX_SUSPEND_ABORT_LEN);
@@ -394,20 +417,23 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 	}
 
 	arch_suspend_enable_irqs();
+	//printk("PM: arch_suspend_enable_irqs done!\n");
 	BUG_ON(irqs_disabled());
 
  Enable_cpus:
-	enable_nonboot_cpus();
+	//enable_nonboot_cpus();
 
  Platform_wake:
 	platform_resume_noirq(state);
 	dpm_resume_noirq(PMSG_RESUME);
+	enable_nonboot_cpus();
 
  Platform_early_resume:
 	platform_resume_early(state);
 
  Devices_early_resume:
 	dpm_resume_early(PMSG_RESUME);
+	platform_resume_after_noirqs();
 
  Platform_finish:
 	platform_resume_finish(state);
@@ -430,7 +456,10 @@ int suspend_devices_and_enter(suspend_state_t state)
 	if (error)
 		goto Close;
 
-	//suspend_console();
+    // 20210220,hsl. 20210526: 我们休眠的时候会关闭 VCCSD_IO，同时也关闭了串口的电源。
+    // 如果此时打开串口，有可能会导致休眠无法唤醒（系统没有死机）。--2020527:正式的带SD卡
+    // 的项目，我们会关闭 FIQ-DEBUG.就不存在打印问题。此处保留用于调试。
+	// suspend_console();  
 	suspend_test_start();
 	error = dpm_suspend_start(PMSG_SUSPEND);
 	if (error) {
@@ -463,6 +492,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 	goto Resume_devices;
 }
 
+extern void dpm_long_resume(void) ;
 /**
  * suspend_finish - Clean up before finishing the suspend sequence.
  *
@@ -472,6 +502,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 static void suspend_finish(void)
 {
 	suspend_thaw_processes();
+	dpm_long_resume();
 	pm_notifier_call_chain(PM_POST_SUSPEND);
 	pm_restore_console();
 }

@@ -11,15 +11,27 @@
 	};
 
 	reserved-memory {
+		// 20190906: waveform 的大小固定的，不会超过 312K， 
+		// --尝试把地址改为 0x08800000 ,内核跑不起来。访问虚拟地址的时候挂掉了。
+		// --U-BOOT 里面规定死了，waveform 的保留起始地址是 waveform_add_r=0x08300000 
+		// (include/configs/px30_common.h),且长度是 EINK_WAVEFORM_SIZE	512000 。这部分
+		// 的空间必须留出来，否则对应部分的内核数据就会被覆盖。--后面修改我们自己的U-BOOT数据
+		// 之后，再修改这部分区间和大小。
 		waveform_reserved: waveform@8300000 {
-			reg = <0x0 0x08300000 0x0 0x100000>;
+			reg = <0x0 0x08300000 0x0 0x52000>;
 			no-map;
 		};
 
 		display_reserved: framebuffer@10000000 {
-			reg = <0x0 0x10000000 0x0 0x800000>;
+			reg = <0x0 0x10000000 0x0 0x600000>;
 			no-map;
 		};
+		
+		// 20190909,hsl add for debug.
+		/*dumpfs_reserved: dumpfs@11000000 {
+			reg = <0x0 0x11000000 0x0 0x600000>;
+			no-map;
+		};*/
 	};
 
 	tcon0: tcon@ff460000 {
