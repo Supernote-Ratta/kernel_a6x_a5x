@@ -1,4 +1,4 @@
-CONFIGURING the kernel_a6x_a5x:
+COMPILING the kernel_a6x_a5x:
   cd /home/name/build/ 
   git clone git@github.com:Supernote-Ratta/kernel_a6x_a5x.git
   git clone git@github.com:Supernote-Ratta/prebuilts.git
